@@ -1,11 +1,15 @@
 import { onScopeDispose, shallowRef, watch, type Ref } from 'vue'
-import { api } from '../api'
-import type { Preview, ResumeDoc } from '../types'
+import { api, type DocKind } from '../api'
+import type { PageDoc, Preview } from '../types'
 
 const DEBOUNCE_MS = 250
 
-/** Re-renders the resume (pages, text layer, checks) whenever it changes. */
-export function usePreview(doc: Readonly<Ref<ResumeDoc | null>>) {
+/**
+ * Re-renders the document (pages, text layer, checks) whenever it changes.
+ * While `doc` is null the last result stays, so showing the document again
+ * is instant until its fresh render arrives.
+ */
+export function usePreview(kind: DocKind, doc: Readonly<Ref<PageDoc | null>>) {
   const preview = shallowRef<Preview | null>(null)
   const pageUrls = shallowRef<string[]>([])
   const pending = shallowRef(false)
@@ -21,14 +25,17 @@ export function usePreview(doc: Readonly<Ref<ResumeDoc | null>>) {
   watch(
     () => (doc.value ? JSON.stringify(doc.value) : null),
     (json, _old, onCleanup) => {
-      if (!json) return
+      if (!json) {
+        pending.value = false
+        return
+      }
       // Pending from the edit itself, not after the debounce, so the preview
       // reacts the moment something changes.
       pending.value = true
       const controller = new AbortController()
       const timer = setTimeout(async () => {
         try {
-          const result = await api.preview(json, controller.signal)
+          const result = await api.preview(kind, json, controller.signal)
           setPages(result.pages)
           preview.value = result
           error.value = null

@@ -17,7 +17,11 @@ func TestSyncFiles(t *testing.T) {
 	rdir := filepath.Join(l.choose(t), "Resume")
 	var v version
 	decodeInto(t, l.call(t, "POST", "/api/resumes/Resume/versions", `{"label":"Sent"}`, 201), &v)
-	if err := os.WriteFile(filepath.Join(rdir, versionsDir, "broken.json"), []byte(`{"basics":{}}`), 0o600); err != nil {
+	broken := filepath.Join(rdir, versionsDir, "broken")
+	if err := os.Mkdir(broken, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, resumeFile), []byte(`{"basics":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sync := func() syncResult {
@@ -28,21 +32,25 @@ func TestSyncFiles(t *testing.T) {
 		return res
 	}
 
-	vbase := "versions/" + v.ID
+	vbase := "versions/" + v.ID + "/resume"
 	res := sync()
-	if want := []string{"resume.md", "resume.pdf", vbase + ".md", vbase + ".pdf"}; !slices.Equal(res.Written, want) {
+	if want := []string{"resume.docx", "resume.md", "resume.pdf", vbase + ".docx", vbase + ".md", vbase + ".pdf"}; !slices.Equal(res.Written, want) {
 		t.Fatalf("first sync wrote %q, want %q", res.Written, want)
 	}
-	if len(res.Failed) != 1 || res.Failed[0].File != "versions/broken.json" {
+	if len(res.Failed) != 1 || res.Failed[0].File != "versions/broken/resume.json" {
 		t.Fatalf("failures = %+v", res.Failed)
 	}
-	md, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID+".md"))
+	md, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID, "resume.md"))
 	if err != nil || !strings.HasPrefix(string(md), "# ") {
 		t.Fatalf("version markdown: %v\n%s", err, md)
 	}
-	pdf, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID+".pdf"))
+	pdf, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID, "resume.pdf"))
 	if err != nil || !strings.HasPrefix(string(pdf), "%PDF-") {
 		t.Fatalf("version pdf: %v", err)
+	}
+	docx, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID, "resume.docx"))
+	if err != nil || !strings.HasPrefix(string(docx), "PK") {
+		t.Fatalf("version docx: %v", err)
 	}
 
 	if res := sync(); len(res.Written) != 0 {
@@ -50,14 +58,12 @@ func TestSyncFiles(t *testing.T) {
 	}
 
 	l.call(t, "PUT", "/api/resumes/Resume", exportDoc, 204)
-	if res := sync(); !slices.Equal(res.Written, []string{"resume.md", "resume.pdf"}) {
+	if res := sync(); !slices.Equal(res.Written, []string{"resume.docx", "resume.md", "resume.pdf"}) {
 		t.Fatalf("sync after edit wrote %q", res.Written)
 	}
 
 	l.call(t, "DELETE", "/api/resumes/Resume/versions/"+strings.ReplaceAll(v.ID, " ", "%20"), "", 204)
-	for _, ext := range exportExts {
-		if _, err := os.Stat(filepath.Join(rdir, versionsDir, v.ID+ext)); !os.IsNotExist(err) {
-			t.Fatalf("%s export survived deleting its version: %v", ext, err)
-		}
+	if _, err := os.Stat(filepath.Join(rdir, versionsDir, v.ID)); !os.IsNotExist(err) {
+		t.Fatalf("version folder survived deleting its version: %v", err)
 	}
 }

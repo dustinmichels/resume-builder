@@ -11,16 +11,20 @@ import (
 // Doc is the subset of the resume JSON the server needs to understand.
 // The frontend owns the full schema; unknown fields pass through untouched.
 type Doc struct {
-	Basics *struct {
-		Name     string   `json:"name"`
-		Headline []string `json:"headline"`
-		Contacts []struct {
-			Text string `json:"text"`
-			URL  string `json:"url"`
-		} `json:"contacts"`
-	} `json:"basics"`
+	Basics   *DocBasics   `json:"basics"`
 	Sections []DocSection `json:"sections"`
 	Style    *Style       `json:"style"`
+}
+
+type DocBasics struct {
+	Name     string       `json:"name"`
+	Headline []string     `json:"headline"`
+	Contacts []DocContact `json:"contacts"`
+}
+
+type DocContact struct {
+	Text string `json:"text"`
+	URL  string `json:"url"`
 }
 
 // Hidden sections, items and columns stay in the saved resume but are left
@@ -112,25 +116,10 @@ var (
 // parserChecks compares the resume content with the PDF text layer
 // (pdftotext -raw) and reports what an automated reader would trip over.
 func parserChecks(doc Doc, text string, pages int) []Check {
-	lines := strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == '\f' })
 	l := checkList{group: groupParsers}
-
-	// Typed dot leaders.
-	if hits := matchingLines(lines, dotRun.MatchString); len(hits) > 0 {
-		l.add("error", "Dot leaders are in the text layer",
-			"Readers see the dots as words. Draw leaders instead of typing them.\n"+sample(hits))
-	} else {
-		l.add("ok", "No typed dot leaders", "")
-	}
-
-	// Decorative symbols (❖ ● ★ emoji …) that parsers render as noise.
-	if syms := symbols(text); len(syms) > 0 {
-		hits := matchingLines(lines, func(s string) bool { return strings.ContainsAny(s, strings.Join(syms, "")) })
-		l.add("warn", "Symbols in the text layer: "+strings.Join(syms, " "),
-			"Parsers may show these as garbage or drop the line. Remove them, or draw them in the template.\n"+sample(hits))
-	} else {
-		l.add("ok", "No decorative symbols", "")
-	}
+	lines := textLines(text)
+	l.dotLeaders(lines)
+	l.decorativeSymbols(text, lines)
 
 	normLines := make([]string, len(lines))
 	for i, line := range lines {
@@ -169,14 +158,7 @@ func parserChecks(doc Doc, text string, pages int) []Check {
 			"Use a month and 4-digit year (or “Present”):\n"+strings.Join(badDates, "\n"))
 	}
 
-	// Every piece of content should survive into the text layer.
-	pieces := contentPieces(doc)
-	if missing, _ := findPieces(pieces, text, normalize); len(missing) > 0 {
-		l.add("error", fmt.Sprintf("%d of %d text pieces not found in the text layer", len(missing), len(pieces)),
-			sample(missing))
-	} else {
-		l.add("ok", fmt.Sprintf("All %d text pieces found in the text layer", len(pieces)), "")
-	}
+	l.missingPieces(doc, text)
 
 	if email := emailRe.FindString(text); email != "" {
 		l.add("ok", "Email readable: "+email, "")
@@ -188,6 +170,42 @@ func parserChecks(doc Doc, text string, pages int) []Check {
 		l.add("info", fmt.Sprintf("%d pages", pages), "Most resumes fit on one or two pages.")
 	}
 	return l.checks
+}
+
+func textLines(text string) []string {
+	return strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == '\f' })
+}
+
+// dotLeaders reports dot leaders typed as characters.
+func (l *checkList) dotLeaders(lines []string) {
+	if hits := matchingLines(lines, dotRun.MatchString); len(hits) > 0 {
+		l.add("error", "Dot leaders are in the text layer",
+			"Readers see the dots as words. Draw leaders instead of typing them.\n"+sample(hits))
+	} else {
+		l.add("ok", "No typed dot leaders", "")
+	}
+}
+
+// decorativeSymbols reports symbols (❖ ● ★ emoji …) that parsers render as noise.
+func (l *checkList) decorativeSymbols(text string, lines []string) {
+	if syms := symbols(text); len(syms) > 0 {
+		hits := matchingLines(lines, func(s string) bool { return strings.ContainsAny(s, strings.Join(syms, "")) })
+		l.add("warn", "Symbols in the text layer: "+strings.Join(syms, " "),
+			"Parsers may show these as garbage or drop the line. Remove them, or draw them in the template.\n"+sample(hits))
+	} else {
+		l.add("ok", "No decorative symbols", "")
+	}
+}
+
+// missingPieces reports content that didn't survive into the text layer.
+func (l *checkList) missingPieces(doc Doc, text string) {
+	pieces := contentPieces(doc)
+	if missing, _ := findPieces(pieces, text, normalize); len(missing) > 0 {
+		l.add("error", fmt.Sprintf("%d of %d text pieces not found in the text layer", len(missing), len(pieces)),
+			sample(missing))
+	} else {
+		l.add("ok", fmt.Sprintf("All %d text pieces found in the text layer", len(pieces)), "")
+	}
 }
 
 // findPieces looks for each piece in text, in order, comparing their key

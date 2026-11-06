@@ -17,12 +17,17 @@ interface Row {
   supervisor?: Supervisor
 }
 
-const FIELDS = [
-  { key: 'name', label: 'Name', type: 'text' },
-  { key: 'position', label: 'Position', type: 'text' },
+const FIELDS: { key: Exclude<keyof Supervisor, 'entryId' | 'job' | 'canContact'>; label: string; type?: string; rows?: number }[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'position', label: 'Position' },
   { key: 'email', label: 'Email', type: 'email' },
   { key: 'phone', label: 'Phone', type: 'tel' },
-] as const
+  { key: 'address', label: 'Street address', rows: 2 },
+  { key: 'city', label: 'City' },
+  { key: 'region', label: 'State / region' },
+  { key: 'postalCode', label: 'Postal code' },
+  { key: 'country', label: 'Country' },
+]
 
 // One group per entries section, then the supervisors whose entry was deleted.
 const groups = computed(() => {
@@ -77,9 +82,10 @@ function remove(supervisor: Supervisor) {
           </button>
         </div>
         <div v-if="row.supervisor" class="fields">
-          <label v-for="f in FIELDS" :key="f.key" class="field">
+          <label v-for="f in FIELDS" :key="f.key" class="field" :class="{ wide: f.rows }">
             <span class="field-label">{{ f.label }}</span>
-            <input v-model="row.supervisor[f.key]" class="input" :type="f.type" />
+            <textarea v-if="f.rows" v-model="row.supervisor[f.key]" class="input" :rows="f.rows" />
+            <input v-else v-model="row.supervisor[f.key]" class="input" :type="f.type ?? 'text'" />
           </label>
           <label class="check">
             <input v-model="row.supervisor.canContact" type="checkbox" />
@@ -170,8 +176,12 @@ function remove(supervisor: Supervisor) {
   padding: 6px 6px 8px 0;
 }
 
+.wide,
 .check {
   grid-column: 1 / -1;
+}
+
+.check {
   display: flex;
   align-items: center;
   gap: 6px;

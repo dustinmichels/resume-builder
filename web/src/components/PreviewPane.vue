@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import markdownit from 'markdown-it'
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from 'vue'
-import { describe, resolves } from '../fieldPath'
-import type { Check, FieldBox, Preview, ResumeDoc } from '../types'
+import { describe, getAt, resolves } from '../fieldPath'
+import type { Check, Column, FieldBox, PageDoc, Preview } from '../types'
 import FieldEditor from './FieldEditor.vue'
 
 // Defaults keep rendering safe for v-html: raw HTML is escaped and
@@ -16,13 +16,15 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   return renderLinkOpen(tokens, idx, options, env, self)
 }
 
-const { preview, pageUrls, pending, error, doc, linkChecks, linkError } = defineProps<{
+const { preview, pageUrls, pending, error, doc, label, linkChecks, linkError } = defineProps<{
   preview: Preview | null
   pageUrls: string[]
   pending: boolean
   error: string | null
   /** Edited in place by clicking values on the Page tab. */
-  doc: ResumeDoc | null
+  doc: PageDoc | null
+  /** What the document is, e.g. "Resume" or "Cover letter". */
+  label: string
   /** Web link requests, null while the first answer is pending. */
   linkChecks: Check[] | null
   linkError: string | null
@@ -104,6 +106,160 @@ function boxStyle(f: FieldBox) {
     width: `${(f.w / PAGE_W) * 100}%`,
     height: `${(f.h / PAGE_H) * 100}%`,
   }
+}
+
+// ── Column dividers on the Page tab ─────────────────────────────────────────
+// Between adjacent columns of a side-by-side section, a handle in the middle
+// of the gap moves where the next column starts. Dropping it sets the left
+// column's `width`, and the right one's unless it's last, so its right edge
+// stays put. Double-clicking clears both, so the columns hug their content.
+
+interface Divider {
+  /** The cells on either side, in the same section and on page `page`. */
+  left: FieldBox
+  right: FieldBox
+  page: number
+  /** Whether `right` is the section's last column, which always takes the rest. */
+  rightIsLast: boolean
+  /** The section's line: left edge and width, in points. */
+  lineX: number
+  lineW: number
+  /** Half the gap between the cells; the handle sits in its middle. */
+  half: number
+  top: number
+  bottom: number
+}
+
+/** The narrowest a column can be dragged, as a share of the line. */
+const MIN_SHARE = 0.1
+
+const dividers = computed(() => {
+  const bySection = new Map<string, FieldBox[]>()
+  for (const cell of preview?.columns ?? []) {
+    const section = cell.path.replace(/\.columns\.\d+$/, '')
+    const cells = bySection.get(section)
+    if (cells) cells.push(cell)
+    else bySection.set(section, [cell])
+  }
+  const out: Divider[] = []
+  // Cells come in document order, which is left to right.
+  for (const cells of bySection.values()) {
+    const first = cells[0]!
+    const last = cells.at(-1)!
+    if (cells.length < 2 || cells.some((c) => c.page !== first.page)) continue
+    const top = Math.min(...cells.map((c) => c.y))
+    const bottom = Math.max(...cells.map((c) => c.y + c.h))
+    for (let i = 0; i + 1 < cells.length; i++) {
+      const left = cells[i]!
+      const right = cells[i + 1]!
+      out.push({
+        left,
+        right,
+        page: first.page,
+        rightIsLast: right === last,
+        lineX: first.x,
+        lineW: last.x + last.w - first.x,
+        half: (right.x - left.x - left.w) / 2,
+        top,
+        bottom,
+      })
+    }
+  }
+  return out
+})
+
+const dividersByPage = computed(() => {
+  const byPage = new Map<number, Divider[]>()
+  for (const d of dividers.value) {
+    const list = byPage.get(d.page)
+    if (list) list.push(d)
+    else byPage.set(d.page, [d])
+  }
+  return byPage
+})
+
+/** A divider being dragged, or dropped and waiting for the render that moves it there. */
+const held = shallowRef<{ path: string; x: number; from: number; dragging: boolean } | null>(null)
+watch([() => preview, () => doc], () => {
+  held.value = null
+})
+
+function dividerX(d: Divider) {
+  return held.value?.path === d.left.path ? held.value.x : d.left.x + d.left.w + d.half
+}
+
+function clampDivider(d: Divider, x: number) {
+  const min = d.left.x + MIN_SHARE * d.lineW + d.half
+  const max = d.right.x + d.right.w - MIN_SHARE * d.lineW - d.half
+  return min > max ? dividerX(d) : Math.min(max, Math.max(min, x))
+}
+
+function dividerStyle(d: Divider) {
+  return {
+    left: `${(dividerX(d) / PAGE_W) * 100}%`,
+    top: `${(d.top / PAGE_H) * 100}%`,
+    height: `${((d.bottom - d.top) / PAGE_H) * 100}%`,
+  }
+}
+
+function columnOf(path: string): Column | undefined {
+  return doc ? (getAt(doc, path) as Column | undefined) : undefined
+}
+
+function dividerLabel(d: Divider) {
+  const name = (path: string) => columnOf(path)?.title || 'untitled column'
+  return `Divider between ${name(d.left.path)} and ${name(d.right.path)}`
+}
+
+/** Writes the widths that put the divider at `x`; a no-op when it didn't move. */
+function moveDivider(d: Divider, x: number, from: number) {
+  const left = columnOf(d.left.path)
+  const right = columnOf(d.right.path)
+  if (!left || !right || x === from) return
+  const share = (w: number) => Math.round((w / d.lineW) * 1000) / 1000
+  left.width = share(x - d.half - d.left.x)
+  if (!d.rightIsLast) right.width = share(d.right.x + d.right.w - x - d.half)
+}
+
+function resetDivider(d: Divider) {
+  held.value = null
+  const left = columnOf(d.left.path)
+  const right = columnOf(d.right.path)
+  if (left) delete left.width
+  if (right && !d.rightIsLast) delete right.width
+}
+
+function dragStart(d: Divider, e: PointerEvent) {
+  if (e.button !== 0) return
+  e.preventDefault() // no text selection or native drag, which would cancel the pointer
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  const x = dividerX(d)
+  held.value = { path: d.left.path, x, from: x, dragging: true }
+}
+
+function dragMove(d: Divider, e: PointerEvent) {
+  const h = held.value
+  if (!h?.dragging || h.path !== d.left.path) return
+  const page = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect()
+  held.value = { ...h, x: clampDivider(d, ((e.clientX - page.left) / page.width) * PAGE_W) }
+}
+
+function dragEnd(d: Divider) {
+  const h = held.value
+  if (!h?.dragging || h.path !== d.left.path) return
+  held.value = { ...h, dragging: false }
+  moveDivider(d, h.x, h.from)
+}
+
+/** Arrow keys move the divider by 1% of the line, 5% with Shift. */
+function nudge(d: Divider, e: KeyboardEvent) {
+  const dir = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
+  if (!dir) return
+  e.preventDefault()
+  const from = dividerX(d)
+  const x = clampDivider(d, from + dir * (e.shiftKey ? 0.05 : 0.01) * d.lineW)
+  held.value = { path: d.left.path, x, from, dragging: false }
+  moveDivider(d, x, from)
 }
 
 const activePath = shallowRef<string | null>(null)
@@ -261,7 +417,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
     </div>
 
     <div v-if="error" class="render-error" role="alert">
-      <strong>The resume didn’t render.</strong> The preview shows the last good version.
+      <strong>The {{ label.toLowerCase() }} didn’t render.</strong> The preview shows the last good version.
       <pre>{{ error }}</pre>
     </div>
     <div v-if="preview?.warnings.length" class="render-warnings">
@@ -276,7 +432,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 
         <div v-else-if="tab === 'page'" ref="pagesEl" class="pages">
           <div v-for="(url, i) in pageUrls" :key="i" class="page">
-            <img :src="url" class="page-img" :alt="`Resume page ${i + 1}`" />
+            <img :src="url" class="page-img" :alt="`${label} page ${i + 1}`" />
             <template v-if="doc">
               <div
                 v-for="(field, j) in fieldsByPage.get(i + 1)"
@@ -287,6 +443,27 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
                 :title="describe(doc, field.path)"
                 @mousedown.prevent
                 @click="open(field.path)"
+              />
+              <div
+                v-for="d in dividersByPage.get(i + 1)"
+                :key="d.left.path"
+                class="divider"
+                :class="{ dragging: held?.dragging && held.path === d.left.path }"
+                :style="dividerStyle(d)"
+                role="separator"
+                aria-orientation="vertical"
+                tabindex="0"
+                :aria-label="dividerLabel(d)"
+                :aria-valuenow="Math.round(((dividerX(d) - d.lineX) / d.lineW) * 100)"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                title="Drag to move the divider; double-click to fit the columns to their content"
+                @pointerdown="dragStart(d, $event)"
+                @pointermove="dragMove(d, $event)"
+                @pointerup="dragEnd(d)"
+                @pointercancel="held = null"
+                @dblclick="resetDivider(d)"
+                @keydown="nudge(d, $event)"
               />
             </template>
           </div>
@@ -551,6 +728,34 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 .hit.active {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Draggable divider between side-by-side columns: a wide grab area around a thin line. */
+.divider {
+  position: absolute;
+  z-index: 1;
+  width: 12px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 50%;
+  border-left: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.divider:hover::before,
+.divider:focus-visible::before,
+.divider.dragging::before {
+  border-left: 2px solid var(--accent);
+  margin-left: -1px;
+}
+
+.divider:focus-visible {
+  outline: none;
 }
 
 .card {

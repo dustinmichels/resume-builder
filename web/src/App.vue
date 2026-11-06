@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch, type Ref } from 'vue'
 import { api, download, type ExportFormat } from './api'
 import BasicsEditor from './components/BasicsEditor.vue'
 import ContactEditor from './components/ContactEditor.vue'
+import CoverLetterBar from './components/CoverLetterBar.vue'
+import CoverLetterEditor from './components/CoverLetterEditor.vue'
 import DownloadMenu, { type DownloadItem } from './components/DownloadMenu.vue'
 import PreviewPane from './components/PreviewPane.vue'
 import PromptDialog, { type PromptRequest } from './components/PromptDialog.vue'
@@ -12,20 +14,57 @@ import SetupScreen from './components/SetupScreen.vue'
 import StyleEditor from './components/StyleEditor.vue'
 import SupervisorsEditor from './components/SupervisorsEditor.vue'
 import VersionsPanel from './components/VersionsPanel.vue'
+import { useCoverLetters } from './composables/useCoverLetters'
 import { useLibrary } from './composables/useLibrary'
 import { useLinkChecks } from './composables/useLinkChecks'
 import { usePreview } from './composables/usePreview'
 import { useUndoHistory } from './composables/useUndoHistory'
 import { provideReveal } from './reveal'
+import type { LetterDoc } from './types'
 
 const library = useLibrary()
 const { settings, resumes, currentId, error: libraryError } = library
-const { doc, contact, supervisors, status, error: saveError, save } = library.resume
-const { preview, pageUrls, pending, error: renderError } = usePreview(doc)
-const { checks: linkChecks, error: linkError } = useLinkChecks(doc)
-const { canUndo, canRedo, undo, redo } = useUndoHistory(doc)
+const { doc, contact, supervisors, letter, letterId, status, error: saveError, save } = library.resume
+const {
+  letters,
+  loaded: lettersLoaded,
+  open: openLetter,
+  create: createLetter,
+  duplicate: duplicateLetter,
+  rename: renameLetter,
+  remove: removeLetter,
+} = useCoverLetters(currentId, library.resume)
 
-const panel = shallowRef<'content' | 'style' | 'contact' | 'supervisors' | 'versions'>('content')
+const panel = shallowRef<'content' | 'style' | 'letters' | 'contact' | 'supervisors' | 'versions'>('content')
+
+/** The open letter with its resume's name and style, while the Cover letters tab shows it. */
+const letterDoc = computed<LetterDoc | null>(() =>
+  panel.value === 'letters' && doc.value && letter.value
+    ? { basics: doc.value.basics, style: doc.value.style, letter: letter.value }
+    : null,
+)
+/** The page preview, downloads and undo follow the letter while it is shown, else the resume. */
+const onLetter = computed(() => letterDoc.value !== null)
+const pick = <T,>(forResume: Readonly<Ref<T>>, forLetter: Readonly<Ref<T>>) =>
+  computed(() => (onLetter.value ? forLetter.value : forResume.value))
+
+const resumePreview = usePreview('resume', doc)
+const letterPreview = usePreview('letter', letterDoc)
+const preview = pick(resumePreview.preview, letterPreview.preview)
+const pageUrls = pick(resumePreview.pageUrls, letterPreview.pageUrls)
+const pending = pick(resumePreview.pending, letterPreview.pending)
+const renderError = pick(resumePreview.error, letterPreview.error)
+const resumeLinks = useLinkChecks('resume', doc)
+const letterLinks = useLinkChecks('letter', letterDoc)
+const linkChecks = pick(resumeLinks.checks, letterLinks.checks)
+const linkError = pick(resumeLinks.error, letterLinks.error)
+const resumeHistory = useUndoHistory(doc)
+const letterHistory = useUndoHistory(letter)
+const canUndo = pick(resumeHistory.canUndo, letterHistory.canUndo)
+const canRedo = pick(resumeHistory.canRedo, letterHistory.canRedo)
+const undo = () => (onLetter.value ? letterHistory : resumeHistory).undo()
+const redo = () => (onLetter.value ? letterHistory : resumeHistory).redo()
+
 const exportError = shallowRef<string | null>(null)
 const exporting = shallowRef<ExportFormat | null>(null)
 const actionError = shallowRef<string | null>(null)
@@ -49,7 +88,10 @@ const STATUS_LABELS = {
 } as const
 
 const accentStyle = computed(() => (doc.value ? { '--accent': doc.value.style.accent } : {}))
-const fileBase = computed(() => `${doc.value?.basics.name || 'Resume'} - Resume`)
+const fileBase = computed(() => {
+  const name = doc.value?.basics.name || 'Resume'
+  return onLetter.value ? `${name} - Cover Letter - ${letterId.value}` : `${name} - Resume`
+})
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform)
 const UNDO_KEYS = IS_MAC ? '⌘Z' : 'Ctrl+Z'
@@ -57,9 +99,9 @@ const REDO_KEYS = IS_MAC ? '⇧⌘Z' : 'Ctrl+Y'
 const REVEAL_LABEL = IS_MAC ? 'Open in Finder' : 'Open folder'
 
 /**
- * Undo/redo keys act on the resume, also inside its text fields. Fields
- * outside the resume editors ([data-resume-undo]) and dialogs keep the
- * browser's own undo.
+ * Undo/redo keys act on the shown document (the resume, or the letter on the
+ * Cover letters tab), also inside its text fields. Fields outside the
+ * document editors ([data-resume-undo]) and dialogs keep the browser's own undo.
  */
 function onUndoKey(e: KeyboardEvent) {
   if (e.isComposing || e.altKey || !(IS_MAC ? e.metaKey : e.ctrlKey)) return
@@ -79,11 +121,12 @@ onScopeDispose(() => window.removeEventListener('keydown', onUndoKey))
 const EXPORT_LABELS = { pdf: 'PDF', docx: 'Word', md: 'Markdown' } as const
 
 async function downloadExport(format: ExportFormat) {
-  if (!doc.value) return
+  const shown = letterDoc.value ?? doc.value
+  if (!shown) return
   exporting.value = format
   exportError.value = null
   try {
-    download(await api.exportAs(format, JSON.stringify(doc.value)), `${fileBase.value}.${format}`)
+    download(await api.exportAs(onLetter.value ? 'letter' : 'resume', format, JSON.stringify(shown)), `${fileBase.value}.${format}`)
   } catch (e) {
     exportError.value = `${EXPORT_LABELS[format]} export failed: ${e instanceof Error ? e.message : e}`
   } finally {
@@ -98,7 +141,10 @@ function downloadText() {
 function downloadJson() {
   if (!doc.value) return
   const { basics, sections } = doc.value
-  download(new Blob([JSON.stringify({ basics, sections }, null, 2)], { type: 'application/json' }), `${fileBase.value}.json`)
+  // Content only, as for the resume: no style.
+  const { style: _, ...letterContent } = letterDoc.value?.letter ?? {}
+  const content = letterDoc.value ? { name: basics.name, ...letterContent } : { basics, sections }
+  download(new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }), `${fileBase.value}.json`)
 }
 
 const downloadItems = computed<DownloadItem[]>(() => [
@@ -109,13 +155,13 @@ const downloadItems = computed<DownloadItem[]>(() => [
 ])
 
 /**
- * Shows a value opened on the page in the Content panel: expands the cards
- * around it, scrolls the panel to it unless it's already in view, and
- * flashes it. Only the panel scrolls, never the window, so the stacked
- * narrow layout stays on the preview.
+ * Shows a value opened on the page in its panel (Content, or Cover letters for
+ * letter values): expands the cards around it, scrolls the panel to it unless
+ * it's already in view, and flashes it. Only the panel scrolls, never the
+ * window, so the stacked narrow layout stays on the preview.
  */
 async function revealInSidebar(path: string) {
-  panel.value = 'content'
+  panel.value = path.startsWith('letter.') ? 'letters' : 'content'
   revealing.value = path
   await nextTick()
   revealing.value = null
@@ -153,7 +199,7 @@ async function revealResume() {
   }
 }
 
-/** Brings resume.md and resume.pdf (and each version's copies) up to date with the saved resume. */
+/** Brings resume.md, resume.docx and resume.pdf (and each version's and letter's copies) up to date with the saved resume. */
 async function syncFiles() {
   const id = currentId.value
   if (!id) return
@@ -247,6 +293,18 @@ function promptSettings() {
         @rename="promptRename"
         @remove="promptDelete"
       />
+      <button
+        class="icon-btn"
+        type="button"
+        :title="`${REVEAL_LABEL}: this resume's folder`"
+        :aria-label="REVEAL_LABEL"
+        :disabled="!currentId"
+        @click="revealResume"
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2.5h9A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
+        </svg>
+      </button>
       <div class="save-group">
         <button
           class="save-status"
@@ -261,7 +319,7 @@ function promptSettings() {
           class="sync-files"
           :class="{ synced }"
           type="button"
-          :title="synced ?? 'Save, then write resume.md and resume.pdf (and each version\'s copies) beside resume.json.'"
+          :title="synced ?? 'Save, then write Markdown and PDF copies beside resume.json, each version and each cover letter.'"
           :disabled="!currentId || syncing"
           @click="syncFiles"
         >
@@ -291,18 +349,6 @@ function promptSettings() {
           {{ exporting === 'pdf' ? 'Exporting…' : 'Download PDF' }}
         </button>
       </div>
-      <button
-        class="icon-btn"
-        type="button"
-        :title="`${REVEAL_LABEL}: this resume's folder`"
-        :aria-label="REVEAL_LABEL"
-        :disabled="!currentId"
-        @click="revealResume"
-      >
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2.5h9A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
-        </svg>
-      </button>
       <button class="icon-btn" type="button" title="Data folder settings" aria-label="Settings" @click="promptSettings">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
@@ -318,6 +364,7 @@ function promptSettings() {
         <div class="editor-tabs" role="tablist">
           <button role="tab" :aria-selected="panel === 'content'" @click="panel = 'content'">Content</button>
           <button role="tab" :aria-selected="panel === 'style'" @click="panel = 'style'">Style</button>
+          <button role="tab" :aria-selected="panel === 'letters'" @click="panel = 'letters'">Cover letters</button>
           <button role="tab" :aria-selected="panel === 'contact'" @click="panel = 'contact'">Contact</button>
           <button role="tab" :aria-selected="panel === 'supervisors'" @click="panel = 'supervisors'">Supervisors</button>
           <button role="tab" :aria-selected="panel === 'versions'" @click="panel = 'versions'">Versions</button>
@@ -342,6 +389,21 @@ function promptSettings() {
             <h2 class="group-title">Page style</h2>
             <StyleEditor v-model="doc.style" />
           </section>
+        </div>
+
+        <div v-else-if="panel === 'letters'" class="editor-scroll" data-resume-undo>
+          <CoverLetterBar
+            :resume-id="currentId"
+            :letters="letters"
+            :loaded="lettersLoaded"
+            :current="letterId"
+            :open="openLetter"
+            :create="createLetter"
+            :duplicate="duplicateLetter"
+            :rename="renameLetter"
+            :remove="removeLetter"
+          />
+          <CoverLetterEditor v-if="letter" v-model="letter" />
         </div>
 
         <div v-else-if="panel === 'contact'" class="editor-scroll">
@@ -370,7 +432,8 @@ function promptSettings() {
       <PreviewPane
         class="preview"
         data-resume-undo
-        :doc="doc"
+        :doc="letterDoc ?? doc"
+        :label="onLetter ? 'Cover letter' : 'Resume'"
         :preview="preview"
         :page-urls="pageUrls"
         :pending="pending"

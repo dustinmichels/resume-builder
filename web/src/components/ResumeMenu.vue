@@ -2,10 +2,10 @@
 import { useTemplateRef, watch } from 'vue'
 import { useMenu } from '../composables/useMenu'
 import { formatRelative } from '../format'
-import type { ResumeSummary } from '../types'
+import type { DocSummary } from '../types'
 
 defineProps<{
-  resumes: ResumeSummary[]
+  resumes: DocSummary[]
   current: string | null
 }>()
 

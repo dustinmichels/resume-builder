@@ -165,7 +165,11 @@
 
 #set list(marker: marker, indent: 1.4em, body-indent: 0.7em, spacing: 0.4em)
 
-#show heading.where(level: 1): it => block(above: 1.5em, below: 0.85em, sticky: true, {
+// Space above a section, in `base` units: a bare `em` here would resolve
+// against the heading's own (larger) text size, so it would differ from the
+// same `em` in body text, e.g. the side-by-side columns wrapper.
+#let section-gap = 2.1 * base
+#show heading.where(level: 1): it => block(above: section-gap, below: 0.85em, sticky: true, {
   box(rect(width: 0.95 * base, height: 0.95 * base, fill: accent))
   h(1.1 * base)
   text(size: 1.32 * base, weight: "bold", fill: accent, upper(it.body))
@@ -232,15 +236,28 @@
   height: 1.05em,
 ))))
 
-#let column-lines(c, at) = {
+#let icon-of(c, i) = {
   let icons = c.at("icons", default: none) // absent, or null in JSON
+  if icons != none { icons.at(i, default: none) }
+}
+
+// Whether any visible line of these columns has an icon. If so, every line
+// starts after an icon-wide gutter, so text stays aligned across lines (and
+// table rows) with and without icons.
+#let has-icons(cols) = cols.any(c => c.lines.enumerate().any(((i, l)) => l != "" and icon-of(c, i) != none))
+
+#let icon-gap = 0.55em
+#let column-lines(c, at, gutter) = {
   for (i, l) in c.lines.enumerate().filter(((i, l)) => l != "") {
-    let icon = if icons != none { icons.at(i, default: none) }
-    // Hung into the left padding, so the text stays aligned with icon-less lines.
-    let hang = if icon != none {
-      h(-1.6em) + field(at + ".icons." + str(i), line-icon(icon.svg)) + h(0.55em)
+    let icon = icon-of(c, i)
+    let lead = if icon != none {
+      field(at + ".icons." + str(i), line-icon(icon.svg)) + h(icon-gap)
+    } else if gutter {
+      h(1.05em + icon-gap)
     }
-    block-field(at + ".lines." + str(i), par(hang + rich(l)))
+    // Hanging indent keeps wrapped lines aligned with the text, not the icon.
+    let indent = if gutter { 1.05em + icon-gap } else { 0pt }
+    block-field(at + ".lines." + str(i), par(hanging-indent: indent, lead + rich(l)))
   }
 }
 
@@ -253,7 +270,10 @@
 #let columns-section(sec, at) = {
   let cols = sec.columns.enumerate().filter(((i, c)) => shown(c)).map(((i, c)) => (c, at + ".columns." + str(i)))
   if cols.len() == 0 { return }
-  if sec.at("variant", default: "table") == "table" {
+  let table = sec.at("variant", default: "table") == "table"
+  // Table rows share one text edge; side-by-side columns each have their own.
+  let gutter = table and has-icons(cols.map(((c, at)) => c))
+  if table {
     let rule = (paint: muted, thickness: 0.6pt, dash: "dotted")
     let pad-y = 0.5em
     grid(
@@ -267,18 +287,27 @@
       stroke: (x, y) => if y > 0 { (top: rule) },
       ..cols.map(((c, at)) => (
         if c.title != "" { text(weight: "bold", fill: muted)[#field(at + ".title", c.title):] } else { [] },
-        { set par(spacing: 0.4em); column-lines(c, at) },
+        { set par(spacing: 0.4em); column-lines(c, at, gutter) },
       )).flatten(),
     )
   } else {
-    // Side-by-side sections: each column gets its own section heading.
-    block(above: 1.5em, grid(
-      columns: (1fr,) * cols.len(),
-      column-gutter: 1.5em,
-      ..cols.map(((c, at)) => {
-        heading(level: 1, field(at + ".title", c.title))
-        pad(left: 2.05 * base, column-lines(c, at))
-      }),
+    // Side-by-side sections: each column gets its own section heading. A
+    // column's `width` is its share of the line width (set by dragging the
+    // divider in the editor); without one, it hugs its content. The last
+    // column takes the remaining width. Each cell records a "cell" mark with
+    // its size, so the editor can draw the dividers between cells.
+    let width(k, c) = if k == cols.len() - 1 { 1fr } else if c.at("width", default: none) != none { c.width * 100% } else { auto }
+    block(above: section-gap, grid(
+      columns: cols.enumerate().map(((k, col)) => width(k, col.at(0))),
+      column-gutter: 5em,
+      ..cols.map(((c, at)) => layout(size => {
+        let body = {
+          heading(level: 1, field(at + ".title", c.title))
+          pad(left: 2.05 * base, column-lines(c, at, has-icons((c,))))
+        }
+        mark(at, "cell", width: size.width / 1pt, height: measure(body, width: size.width).height / 1pt)
+        body
+      })),
     ))
   }
 }

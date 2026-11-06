@@ -5,9 +5,11 @@ package main
 //
 //	<dataDir>/<resume name>/resume.json
 //	<dataDir>/<resume name>/additional/contact.json, supervisors.json   (side files, optional)
-//	<dataDir>/<resume name>/versions/<YYYYMMDD-HHMMSS>[ <label>].json
-//	<dataDir>/<resume name>/[versions/]<name>.md, <name>.pdf     (exports beside each .json, see sync.go)
+//	<dataDir>/<resume name>/cover-letters/<letter name>.json   (see letters.go)
+//	<dataDir>/<resume name>/versions/<YYYYMMDD-HHMMSS>[ <label>]/resume.json
+//	<dataDir>/<resume name>/[versions/<version id>/|cover-letters/]<name>.md, <name>.pdf     (exports beside each .json, see sync.go)
 //	<dataDir>/.trash/<resume name> <YYYYMMDD-HHMMSS>/
+//	<dataDir>/.trash/<resume name> – <letter name> <YYYYMMDD-HHMMSS>.json
 
 import (
 	"bytes"
@@ -61,9 +63,18 @@ type settings struct {
 	DefaultDataDir string `json:"defaultDataDir"`
 }
 
-type resumeSummary struct {
+// summary describes a saved resume or cover letter: its id (the name shown
+// in the editor) and when it last changed.
+type summary struct {
 	ID       string    `json:"id"`
 	Modified time.Time `json:"modified"`
+}
+
+// newestFirst sorts by modification time, newest first, then by id.
+func newestFirst(list []summary) {
+	slices.SortFunc(list, func(a, b summary) int {
+		return cmp.Or(b.Modified.Compare(a.Modified), strings.Compare(a.ID, b.ID))
+	})
 }
 
 type version struct {
@@ -204,18 +215,19 @@ func exists(path string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-// uniqueName returns name, or "name 2", "name 3"… if dir already has it.
-func uniqueName(dir, name string) string {
+// uniqueName returns name, or "name 2", "name 3"… if dir already has
+// name+ext.
+func uniqueName(dir, name, ext string) string {
 	for n, c := 2, name; ; n++ {
-		if !exists(filepath.Join(dir, c)) {
+		if !exists(filepath.Join(dir, c+ext)) {
 			return c
 		}
 		c = fmt.Sprintf("%s %d", name, n)
 	}
 }
 
-func listResumes(dir string) ([]resumeSummary, error) {
-	out := []resumeSummary{}
+func listResumes(dir string) ([]summary, error) {
+	out := []summary{}
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return out, nil
@@ -231,11 +243,9 @@ func listResumes(dir string) ([]resumeSummary, error) {
 		if err != nil || !fi.Mode().IsRegular() {
 			continue
 		}
-		out = append(out, resumeSummary{ID: e.Name(), Modified: fi.ModTime()})
+		out = append(out, summary{ID: e.Name(), Modified: fi.ModTime()})
 	}
-	slices.SortFunc(out, func(a, b resumeSummary) int {
-		return cmp.Or(b.Modified.Compare(a.Modified), strings.Compare(a.ID, b.ID))
-	})
+	newestFirst(out)
 	return out, nil
 }
 
@@ -277,7 +287,7 @@ func (s *server) seed(dir string) error {
 			return err
 		}
 	}
-	return newResume(dir, uniqueName(dir, "Resume"), map[string][]byte{resumeFile: data})
+	return newResume(dir, uniqueName(dir, "Resume", ""), map[string][]byte{resumeFile: data})
 }
 
 // parseVersion reads a version id: "<YYYYMMDD-HHMMSS>[-N][ <label>]".
@@ -301,8 +311,8 @@ func parseVersion(id string) (version, bool) {
 	return version{ID: id, Label: label, Created: created, seq: seq}, true
 }
 
-// versionOf describes a version file; files not named by saveVersion fall
-// back to their name as label and their modification time.
+// versionOf describes a version folder from its resume.json; folders not named
+// by saveVersion fall back to their name as label and the file's modification time.
 func versionOf(id string, fi fs.FileInfo) version {
 	if v, ok := parseVersion(id); ok {
 		return v
@@ -321,14 +331,14 @@ func listVersions(rdir string) ([]version, error) {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasPrefix(name, ".") || !e.Type().IsRegular() || !strings.HasSuffix(name, ".json") {
+		if strings.HasPrefix(name, ".") || !e.IsDir() {
 			continue
 		}
-		fi, err := e.Info()
-		if err != nil {
+		fi, err := os.Stat(filepath.Join(rdir, versionsDir, name, resumeFile))
+		if err != nil || !fi.Mode().IsRegular() {
 			continue
 		}
-		out = append(out, versionOf(strings.TrimSuffix(name, ".json"), fi))
+		out = append(out, versionOf(name, fi))
 	}
 	slices.SortFunc(out, func(a, b version) int {
 		return cmp.Or(b.Created.Compare(a.Created), cmp.Compare(b.seq, a.seq), strings.Compare(b.ID, a.ID))
@@ -336,7 +346,8 @@ func listVersions(rdir string) ([]version, error) {
 	return out, nil
 }
 
-// saveVersion snapshots the saved resume.json in rdir under label.
+// saveVersion snapshots the saved resume.json in rdir under label, in a folder
+// of its own.
 func saveVersion(rdir, label string, now time.Time) (version, error) {
 	data, err := os.ReadFile(filepath.Join(rdir, resumeFile))
 	if err != nil {
@@ -352,7 +363,7 @@ func saveVersion(rdir, label string, now time.Time) (version, error) {
 	}
 	taken := func(stamp string) bool {
 		return slices.ContainsFunc(entries, func(e fs.DirEntry) bool {
-			return e.Name() == stamp+".json" || strings.HasPrefix(e.Name(), stamp+" ")
+			return e.Name() == stamp || strings.HasPrefix(e.Name(), stamp+" ")
 		})
 	}
 	base := now.Format(stampLayout)
@@ -364,7 +375,10 @@ func saveVersion(rdir, label string, now time.Time) (version, error) {
 	if label = sanitize(label); label != "" {
 		id += " " + label
 	}
-	if err := writeFileAtomic(filepath.Join(vdir, id+".json"), data); err != nil {
+	if err := os.Mkdir(filepath.Join(vdir, id), 0o755); err != nil {
+		return version{}, err
+	}
+	if err := writeFileAtomic(filepath.Join(vdir, id, resumeFile), data); err != nil {
 		return version{}, err
 	}
 	v, _ := parseVersion(id)
@@ -401,11 +415,12 @@ func resumeDir(w http.ResponseWriter, dir, id string) (string, bool) {
 
 // versionFile returns the snapshot file of version vid of the resume in rdir.
 func versionFile(w http.ResponseWriter, rdir, vid string) (string, version, bool) {
-	p, err := childPath(filepath.Join(rdir, versionsDir), vid, ".json")
+	vdir, err := childPath(filepath.Join(rdir, versionsDir), vid, "")
 	if err != nil {
 		httpError(w, http.StatusBadRequest, err)
 		return "", version{}, false
 	}
+	p := filepath.Join(vdir, resumeFile)
 	fi, ok := found(w, p, "version", vid)
 	if !ok {
 		return "", version{}, false
@@ -536,7 +551,7 @@ func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		files[resumeFile] = b
-		// Side files aren't versioned, so a copy of a version gets the current ones.
+		// Side files and cover letters aren't versioned, so a copy of a version gets the current ones.
 		for _, name := range sideFiles {
 			b, err := os.ReadFile(filepath.Join(rdir, name))
 			if errors.Is(err, fs.ErrNotExist) {
@@ -548,11 +563,25 @@ func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 			}
 			files[name] = b
 		}
+		letters, err := listLetters(rdir)
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, err)
+			return
+		}
+		for _, l := range letters {
+			name := filepath.Join(lettersDir, l.ID+".json")
+			b, err := os.ReadFile(filepath.Join(rdir, name))
+			if err != nil {
+				httpError(w, http.StatusInternalServerError, err)
+				return
+			}
+			files[name] = b
+		}
 	case body.Version != "":
 		httpError(w, http.StatusBadRequest, errors.New("a version needs the resume it is from"))
 		return
 	}
-	id := uniqueName(dir, sanitizeName(body.Name))
+	id := uniqueName(dir, sanitizeName(body.Name), "")
 	if err := newResume(dir, id, files); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
@@ -831,17 +860,10 @@ func (s *server) deleteVersion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := os.Remove(p); err != nil {
+	// The version's folder holds its snapshot and the exports written by sync.
+	if err := os.RemoveAll(filepath.Dir(p)); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
-	}
-	// The exports written by sync go with their version.
-	base := strings.TrimSuffix(p, ".json")
-	for _, ext := range exportExts {
-		if err := os.Remove(base + ext); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			httpError(w, http.StatusInternalServerError, err)
-			return
-		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

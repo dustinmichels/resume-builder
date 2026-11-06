@@ -136,7 +136,7 @@ func TestPDFMetadata(t *testing.T) {
 		`"headline": ["Analyst"]`, `"headline": ["Analyst", "", "London"]`,
 		`["Go", "C#"]`, `["**Go** (*gRPC*, [Cobra](https://cobra.dev))", "C#; Go"]`,
 	).Replace(exportDoc)
-	out, err := render(context.Background(), "../template/resume.typ", []byte(doc), false)
+	out, err := renderResume(context.Background(), "../template/resume.typ", []byte(doc), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestHiddenParts(t *testing.T) {
 }`)
 	hiddenWords := []string{"Secret", "Hidden", "Cobol"}
 
-	out, err := render(context.Background(), "../template/resume.typ", raw, true)
+	out, err := renderResume(context.Background(), "../template/resume.typ", raw, true)
 	if err != nil {
 		t.Fatal(err)
 	}

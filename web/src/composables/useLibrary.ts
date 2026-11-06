@@ -1,7 +1,7 @@
 import { shallowRef } from 'vue'
 import { api } from '../api'
 import { formatDateTime } from '../format'
-import type { ResumeSummary, Settings, Version } from '../types'
+import type { DocSummary, Settings, Version } from '../types'
 import { useResumeDoc } from './useResumeDoc'
 
 const CURRENT_KEY = 'resume-builder:current'
@@ -13,7 +13,7 @@ const CURRENT_KEY = 'resume-builder:current'
  */
 export function useLibrary() {
   const settings = shallowRef<Settings | null>(null)
-  const resumes = shallowRef<ResumeSummary[]>([])
+  const resumes = shallowRef<DocSummary[]>([])
   const currentId = shallowRef<string | null>(null)
   /** Why the library could not be loaded. */
   const error = shallowRef<string | null>(null)
@@ -125,7 +125,7 @@ export function useLibrary() {
     await switchTo(id)
   }
 
-  /** Pending edits are saved first so resume.md and resume.pdf match the editor. */
+  /** Pending edits are saved first so the synced copies match the editor. */
   function syncFiles() {
     return resume.withSaved((id) => api.syncFiles(id))
   }

@@ -22,14 +22,17 @@ type FieldBox struct {
 // fieldMark is one position recorded by the template's `mark` function.
 // Inline values get a "start" and "end" mark on the text baseline; block
 // values get a "top" mark (with the available width) and a "bottom" mark.
+// Each cell of a side-by-side columns section gets one "cell" mark at its
+// top-left corner, with its width and height.
 type fieldMark struct {
-	Path  string  `json:"path"`
-	Edge  string  `json:"edge"`
-	Page  int     `json:"page"`
-	X     float64 `json:"x"`
-	Y     float64 `json:"y"`
-	Size  float64 `json:"size"`
-	Width float64 `json:"width"`
+	Path   string  `json:"path"`
+	Edge   string  `json:"edge"`
+	Page   int     `json:"page"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Size   float64 `json:"size"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }
 
 // Line metrics as a fraction of the font size: how far glyphs reach above and
@@ -42,10 +45,10 @@ const (
 	sidePad = 1.0 // pt
 )
 
-// queryFields lists the template's field marks in document order.
-func queryFields(ctx context.Context, dir string) ([]fieldMark, error) {
+// queryFields lists the field marks of template main in dir, in document order.
+func queryFields(ctx context.Context, dir, main string) ([]fieldMark, error) {
 	cmd := exec.CommandContext(ctx, "typst", "eval", "--diagnostic-format", "short",
-		"query(<field>).map(it => it.value)", "--in", "resume.typ")
+		"query(<field>).map(it => it.value)", "--in", main)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -71,6 +74,9 @@ func fieldBoxes(marks []fieldMark) []FieldBox {
 	var order []string
 	for i := range marks {
 		m := &marks[i]
+		if m.Edge == "cell" {
+			continue // a column's layout, not a value; see columnBoxes
+		}
 		p := pairs[m.Path]
 		if p == nil {
 			p = &pair{}
@@ -110,6 +116,19 @@ func fieldBoxes(marks []fieldMark) []FieldBox {
 		box.X -= sidePad
 		box.W += 2 * sidePad
 		boxes = append(boxes, box)
+	}
+	return boxes
+}
+
+// columnBoxes lists where each column of the side-by-side columns sections
+// sits, unpadded, from its "cell" mark. Path addresses the column
+// ("sections.4.columns.1"); the editor draws draggable dividers between them.
+func columnBoxes(marks []fieldMark) []FieldBox {
+	boxes := []FieldBox{}
+	for _, m := range marks {
+		if m.Edge == "cell" {
+			boxes = append(boxes, FieldBox{Path: m.Path, Page: m.Page, X: m.X, Y: m.Y, W: m.Width, H: m.Height})
+		}
 	}
 	return boxes
 }

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sync"
 	"time"
@@ -20,9 +22,10 @@ import (
 const maxBody = 4 << 20
 
 type server struct {
-	templatePath string
-	configPath   string // where the chosen data folder is remembered
-	legacyPath   string // pre-library resume, imported when seeding a new data folder
+	templatePath       string
+	letterTemplatePath string // cover-letter.typ beside the resume template
+	configPath         string // where the chosen data folder is remembered
+	legacyPath         string // pre-library resume, imported when seeding a new data folder
 
 	mu      sync.RWMutex
 	dataDir string // "" until the user chooses a folder
@@ -56,14 +59,15 @@ func main() {
 	log.Fatal(http.ListenAndServe(*addr, newMux(s, *static)))
 }
 
-// newServer loads the remembered data folder from configPath.
+// newServer loads the remembered data folder from configPath. The cover
+// letter template is read from templatePath's folder.
 func newServer(templatePath, configPath, legacyPath string) (*server, error) {
 	c, err := loadConfig(configPath)
 	if err != nil {
 		return nil, err
 	}
-	return &server{templatePath: templatePath, configPath: configPath, legacyPath: legacyPath, dataDir: c.DataDir,
-		links: newLinkChecker()}, nil
+	return &server{templatePath: templatePath, letterTemplatePath: filepath.Join(filepath.Dir(templatePath), "cover-letter.typ"),
+		configPath: configPath, legacyPath: legacyPath, dataDir: c.DataDir, links: newLinkChecker()}, nil
 }
 
 // newMux routes the API, plus the built frontend in static if it exists.
@@ -88,11 +92,22 @@ func newMux(s *server, static string) *http.ServeMux {
 		mux.HandleFunc("GET /api/resumes/{id}/"+path, s.getSideFile(file))
 		mux.HandleFunc("PUT /api/resumes/{id}/"+path, s.putSideFile(file))
 	}
+	mux.HandleFunc("GET /api/resumes/{id}/letters", s.listLetters)
+	mux.HandleFunc("POST /api/resumes/{id}/letters", s.createLetter)
+	mux.HandleFunc("GET /api/resumes/{id}/letters/{lid}", s.getLetter)
+	mux.HandleFunc("PUT /api/resumes/{id}/letters/{lid}", s.putLetter)
+	mux.HandleFunc("PATCH /api/resumes/{id}/letters/{lid}", s.renameLetter)
+	mux.HandleFunc("DELETE /api/resumes/{id}/letters/{lid}", s.deleteLetter)
 	mux.HandleFunc("POST /api/preview", s.preview)
 	mux.HandleFunc("POST /api/links", s.checkLinks)
 	mux.HandleFunc("POST /api/pdf", s.pdf)
 	mux.HandleFunc("POST /api/docx", docx)
 	mux.HandleFunc("POST /api/md", markdown)
+	mux.HandleFunc("POST /api/letter/preview", s.letterPreview)
+	mux.HandleFunc("POST /api/letter/links", s.letterLinks)
+	mux.HandleFunc("POST /api/letter/pdf", s.letterPDF)
+	mux.HandleFunc("POST /api/letter/docx", letterDocx)
+	mux.HandleFunc("POST /api/letter/md", letterMarkdown)
 	if fi, err := os.Stat(static); err == nil && fi.IsDir() {
 		mux.Handle("GET /", http.FileServer(http.Dir(static)))
 	}
@@ -109,6 +124,9 @@ type previewResponse struct {
 	Markdown string `json:"markdown"`
 	// Fields maps each editable value to its box on the page, for click-to-edit.
 	Fields []FieldBox `json:"fields"`
+	// Columns are the cells of side-by-side columns sections, for dragging the
+	// dividers between them.
+	Columns []FieldBox `json:"columns"`
 }
 
 func (s *server) preview(w http.ResponseWriter, r *http.Request) {
@@ -117,31 +135,39 @@ func (s *server) preview(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	out, err := render(r.Context(), s.templatePath, raw, true)
+	out, err := renderResume(r.Context(), s.templatePath, raw, true)
 	if err != nil {
 		renderError(w, err)
 		return
 	}
 	defer out.Close()
+	writeJSON(w, previewOf(r.Context(), out, doc, markdownResume(doc), func(text string) []Check {
+		return parserChecks(doc, text, len(out.SVGs))
+	}, dateChecks(doc, time.Now())...))
+}
 
-	resp := previewResponse{Pages: out.SVGs, Warnings: out.Warnings, Fields: out.Fields, Markdown: string(markdownResume(doc))}
-	text, layout, err := extractText(r.Context(), out.PDFPath)
+// previewOf describes a rendered document for the preview: its pages, text
+// layer and Markdown, and the checks of its text layer (by parser), tags and
+// links, then extra.
+func previewOf(ctx context.Context, out *rendered, doc Doc, md []byte, parser func(text string) []Check, extra ...Check) previewResponse {
+	resp := previewResponse{Pages: out.SVGs, Warnings: out.Warnings, Fields: out.Fields, Columns: out.Columns, Markdown: string(md)}
+	text, layout, err := extractText(ctx, out.PDFPath)
 	if err != nil {
 		resp.Checks = []Check{{Group: groupParsers, Level: "warn", Title: "Text layer not checked", Detail: err.Error()}}
 	} else {
 		resp.Text, resp.LayoutText = text, layout
-		resp.Checks = parserChecks(doc, text, len(out.SVGs))
+		resp.Checks = parser(text)
 	}
 	var facts *pdfFacts
-	if f, err := inspectPDF(r.Context(), out.PDFPath); err != nil {
+	if f, err := inspectPDF(ctx, out.PDFPath); err != nil {
 		resp.Checks = append(resp.Checks, Check{Group: groupScreenReaders, Level: "warn", Title: "Tags and links not checked", Detail: err.Error()})
 	} else {
 		facts = &f
 	}
 	resp.Checks = append(resp.Checks, accessibilityChecks(doc, out.UAErrors, facts)...)
 	resp.Checks = append(resp.Checks, linkChecks(doc, facts)...)
-	resp.Checks = append(resp.Checks, dateChecks(doc, time.Now())...)
-	writeJSON(w, resp)
+	resp.Checks = append(resp.Checks, extra...)
+	return resp
 }
 
 // checkLinks requests the resume's web links. It's separate from preview so
@@ -167,14 +193,14 @@ func (s *server) pdf(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	out, err := render(r.Context(), s.templatePath, raw, false)
+	out, err := renderResume(r.Context(), s.templatePath, raw, false)
 	if err != nil {
 		renderError(w, err)
 		return
 	}
 	defer out.Close()
 
-	attachment(w, doc, "application/pdf", "pdf")
+	attachment(w, docName(doc), "Resume", "application/pdf", "pdf")
 	http.ServeFile(w, r, out.PDFPath)
 }
 
@@ -189,7 +215,7 @@ func docx(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
-	attachment(w, doc, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx")
+	attachment(w, docName(doc), "Resume", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx")
 	w.Write(b)
 }
 
@@ -199,18 +225,27 @@ func markdown(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	attachment(w, doc, "text/markdown; charset=utf-8", "md")
+	attachment(w, docName(doc), "Resume", "text/markdown; charset=utf-8", "md")
 	w.Write(markdownResume(doc))
 }
 
-// attachment sets download headers named after the resume's owner.
-func attachment(w http.ResponseWriter, doc Doc, contentType, ext string) {
-	name := unsafeFilename.ReplaceAllString(doc.Basics.Name, "")
+func docName(doc Doc) string {
+	if doc.Basics == nil {
+		return ""
+	}
+	return doc.Basics.Name
+}
+
+// attachment sets download headers naming the file "<owner> - <what>".
+func attachment(w http.ResponseWriter, owner, what, contentType, ext string) {
+	name := unsafeFilename.ReplaceAllString(owner, "")
 	if name == "" {
-		name = "Resume"
+		name = what
+	} else {
+		name += " - " + what
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s - Resume.%s"`, name, ext))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.%s"`, name, ext))
 }
 
 // readDoc reads a resume document from the request body, returning the raw

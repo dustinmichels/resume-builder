@@ -2,9 +2,10 @@ import { newContactInfo, newSupervisor } from './factory'
 import type {
   Check,
   ContactInfo,
+  CoverLetter,
+  DocSummary,
   Preview,
   ResumeDoc,
-  ResumeSummary,
   Settings,
   SupervisorsDoc,
   SyncResult,
@@ -13,6 +14,10 @@ import type {
 
 /** Formats the server renders; each is also the file extension. */
 export type ExportFormat = 'pdf' | 'docx' | 'md'
+
+/** What a rendering call gets: a ResumeDoc, or a LetterDoc (letter + its resume's basics and style). */
+export type DocKind = 'resume' | 'letter'
+const renderPath = (kind: DocKind, what: string) => (kind === 'letter' ? `/api/letter/${what}` : `/api/${what}`)
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(path, init)
@@ -37,6 +42,7 @@ const send = (method: string, body: string, signal?: AbortSignal): RequestInit =
 
 const resumePath = (id: string) => `/api/resumes/${encodeURIComponent(id)}`
 const versionPath = (id: string, version: string) => `${resumePath(id)}/versions/${encodeURIComponent(version)}`
+const letterPath = (id: string, letter: string) => `${resumePath(id)}/letters/${encodeURIComponent(letter)}`
 
 export const api = {
   async getSettings(): Promise<Settings> {
@@ -48,7 +54,7 @@ export const api = {
   },
 
   /** Most recently modified first. */
-  async listResumes(): Promise<ResumeSummary[]> {
+  async listResumes(): Promise<DocSummary[]> {
     return (await request('/api/resumes')).json()
   },
   /**
@@ -107,7 +113,7 @@ export const api = {
   async deleteVersion(id: string, version: string): Promise<void> {
     await request(versionPath(id, version), { method: 'DELETE' })
   },
-  /** Writes a Markdown and PDF copy beside resume.json and each saved version, skipping up-to-date ones. */
+  /** Writes a Markdown, Word and PDF copy beside resume.json, each saved version and each cover letter, skipping up-to-date ones. */
   async syncFiles(id: string): Promise<SyncResult> {
     return (await request(`${resumePath(id)}/sync`, { method: 'POST' })).json()
   },
@@ -116,15 +122,38 @@ export const api = {
     await request(`${resumePath(id)}/reveal`, { method: 'POST' })
   },
 
-  async preview(json: string, signal: AbortSignal): Promise<Preview> {
-    return (await request('/api/preview', send('POST', json, signal))).json()
+  /** The resume's cover letters, most recently modified first. */
+  async listLetters(id: string): Promise<DocSummary[]> {
+    return (await request(`${resumePath(id)}/letters`)).json()
   },
-  /** Requests the resume's web links; the server remembers answers for a few minutes. */
-  async checkLinks(json: string, signal: AbortSignal): Promise<Check[]> {
-    return (await request('/api/links', send('POST', json, signal))).json()
+  /** Saves a new letter, or a copy of letter `from`. The server makes the name unique; the returned id is final. */
+  async createLetter(id: string, name: string, source: { letter: CoverLetter } | { from: string }): Promise<string> {
+    return (await (await request(`${resumePath(id)}/letters`, send('POST', JSON.stringify({ name, ...source })))).json()).id
   },
-  async exportAs(format: ExportFormat, json: string): Promise<Blob> {
-    return (await request(`/api/${format}`, send('POST', json))).blob()
+  async getLetter(id: string, letter: string): Promise<CoverLetter> {
+    return (await request(letterPath(id, letter))).json()
+  },
+  async saveLetter(id: string, letter: string, json: string): Promise<void> {
+    await request(letterPath(id, letter), send('PUT', json))
+  },
+  /** Returns the new id. */
+  async renameLetter(id: string, letter: string, name: string): Promise<string> {
+    return (await (await request(letterPath(id, letter), send('PATCH', JSON.stringify({ name })))).json()).id
+  },
+  /** Moves the letter into the data folder's .trash. */
+  async deleteLetter(id: string, letter: string): Promise<void> {
+    await request(letterPath(id, letter), { method: 'DELETE' })
+  },
+
+  async preview(kind: DocKind, json: string, signal: AbortSignal): Promise<Preview> {
+    return (await request(renderPath(kind, 'preview'), send('POST', json, signal))).json()
+  },
+  /** Requests the document's web links; the server remembers answers for a few minutes. */
+  async checkLinks(kind: DocKind, json: string, signal: AbortSignal): Promise<Check[]> {
+    return (await request(renderPath(kind, 'links'), send('POST', json, signal))).json()
+  },
+  async exportAs(kind: DocKind, format: ExportFormat, json: string): Promise<Blob> {
+    return (await request(renderPath(kind, format), send('POST', json))).blob()
   },
 }
 

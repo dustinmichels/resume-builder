@@ -1,7 +1,7 @@
 import { onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
 import { api } from '../api'
 import { jobLabel } from '../format'
-import type { ContactInfo, ResumeDoc, SupervisorsDoc } from '../types'
+import type { ContactInfo, CoverLetter, ResumeDoc, SupervisorsDoc } from '../types'
 
 export type SaveStatus = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error'
 
@@ -11,13 +11,17 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
  * Loads the resume `id` and its side documents (contact info, supervisors)
- * from the server and autosaves every change to them.
+ * from the server and autosaves every change to them, and to the cover letter
+ * opened with `setLetter`.
  * Changing `id` saves pending edits to the old resume before the new one loads.
  */
 export function useResumeDoc(id: Readonly<Ref<string | null>>) {
   const doc = ref<ResumeDoc | null>(null)
   const contact = ref<ContactInfo | null>(null)
   const supervisors = ref<SupervisorsDoc | null>(null)
+  const letter = ref<CoverLetter | null>(null)
+  /** The open letter's name (its file name, without .json). */
+  const letterId = shallowRef<string | null>(null)
   const status = shallowRef<SaveStatus>('loading')
   const error = shallowRef<string | null>(null)
 
@@ -36,7 +40,10 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
     { doc, write: api.saveResume, saved: '' },
     { doc: contact, write: api.saveContact, saved: '' },
     { doc: supervisors, write: api.saveSupervisors, saved: '' },
+    // Letters are switched inside the queue (see setLetter), so the id is the one the content was loaded from.
+    { doc: letter, write: (id, json) => api.saveLetter(id, letterId.value!, json), saved: '' },
   ]
+  const letterFile = files[3]!
   const unsaved = () => files.filter((f) => f.doc.value && JSON.stringify(f.doc.value) !== f.saved)
 
   function scheduleSave() {
@@ -109,10 +116,28 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
     target = next
   }
 
+  /**
+   * Opens the letter `next` of the open resume, with its content as the
+   * server has it, or closes the open letter (null). Run it inside `withSaved`,
+   * so the edits to the letter it replaces are saved first.
+   */
+  function setLetter(next: string | null, content: CoverLetter | null) {
+    letterId.value = next
+    letterFile.saved = content ? JSON.stringify(content) : ''
+    letter.value = content
+  }
+
+  /** The open letter was renamed: keep it, save to `next` from now on. */
+  function retargetLetter(next: string) {
+    letterId.value = next
+  }
+
   /** Closes the documents without saving (their resume was deleted or the data folder changed). */
   function unload() {
     clearTimeout(timer)
     doc.value = contact.value = supervisors.value = null
+    letter.value = null
+    letterId.value = null
     for (const f of files) f.saved = ''
     docId = null
     target = null
@@ -153,7 +178,7 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
   watch(id, sync, { immediate: true })
 
   watch(
-    [doc, contact, supervisors],
+    [doc, contact, supervisors, letter],
     () => {
       if (!docId || status.value === 'loading') return
       if (unsaved().length) scheduleSave()
@@ -193,5 +218,21 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
     window.removeEventListener('beforeunload', warnUnsaved)
   })
 
-  return { doc, contact, supervisors, status, error, save, withSaved, replace, retarget, unload, sync }
+  return {
+    doc,
+    contact,
+    supervisors,
+    letter,
+    letterId,
+    status,
+    error,
+    save,
+    withSaved,
+    replace,
+    retarget,
+    setLetter,
+    retargetLetter,
+    unload,
+    sync,
+  }
 }

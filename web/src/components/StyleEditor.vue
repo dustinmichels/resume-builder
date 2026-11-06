@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { fontOptions as optionsFor } from '../fonts'
 import type { Style } from '../types'
 
 const style = defineModel<Style>({ required: true })
 
-// Fonts installed on macOS by default, so Typst can always find them.
-const FONTS = ['Helvetica', 'Helvetica Neue', 'Arial', 'Avenir Next', 'Gill Sans', 'Optima', 'Georgia', 'Palatino', 'Baskerville', 'Charter']
-
-// A resume saved with a font outside the list keeps it as an option, so the
-// dropdown shows the font actually in use instead of a blank.
-const fontOptions = computed(() => (FONTS.includes(style.value.font) ? FONTS : [style.value.font, ...FONTS]))
+const fontOptions = computed(() => optionsFor(style.value.font))
 </script>
 
 <template>

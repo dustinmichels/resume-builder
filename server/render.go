@@ -22,6 +22,7 @@ type rendered struct {
 	SVGs     []string
 	Warnings []string
 	Fields   []FieldBox // set with the SVGs
+	Columns  []FieldBox // set with the SVGs
 	// UAErrors are Typst's PDF/UA-1 (accessible PDF) violations. When there
 	// are any, the PDF is compiled again without the standard so it still renders.
 	UAErrors []string
@@ -43,10 +44,21 @@ func checkTools() error {
 	return nil
 }
 
-// render compiles the resume to PDF and, when svg is set, to one SVG per page
-// plus the map of where each editable value sits on those pages.
-// The template is re-read on every call so template edits show up live.
-func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*rendered, error) {
+// renderResume renders a resume document with the resume template, which
+// reads it as data.json and attaches its content as resume.json.
+func renderResume(ctx context.Context, templatePath string, raw []byte, svg bool) (*rendered, error) {
+	content, err := attachedJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	return render(ctx, templatePath, map[string][]byte{"data.json": raw, "resume.json": content}, svg)
+}
+
+// render compiles a template, with files written beside it, to PDF and, when
+// svg is set, to one SVG per page plus the map of where each editable value
+// sits on those pages. The template is re-read on every call so template edits
+// show up live.
+func render(ctx context.Context, templatePath string, files map[string][]byte, svg bool) (*rendered, error) {
 	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	defer cancel()
 
@@ -54,16 +66,14 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 	if err != nil {
 		return nil, err
 	}
-	content, err := attachedJSON(raw)
-	if err != nil {
-		return nil, err
-	}
 	dir, err := os.MkdirTemp("", "resume-render-*")
 	if err != nil {
 		return nil, err
 	}
-	out := &rendered{dir: dir, PDFPath: filepath.Join(dir, "resume.pdf")}
-	for name, b := range map[string][]byte{"resume.typ": tpl, "data.json": raw, "resume.json": content} {
+	main := filepath.Base(templatePath)
+	out := &rendered{dir: dir, PDFPath: filepath.Join(dir, "output.pdf")}
+	files[main] = tpl
+	for name, b := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
 			out.Close()
 			return nil, err
@@ -78,21 +88,21 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 	fields := make(chan fieldsResult, 1)
 	if svg {
 		go func() {
-			_, err := typst(ctx, dir, "page-{0p}.svg")
+			_, err := typst(ctx, dir, main, "page-{0p}.svg")
 			svgErr <- err
 		}()
 		go func() {
-			marks, err := queryFields(ctx, dir)
+			marks, err := queryFields(ctx, dir, main)
 			fields <- fieldsResult{marks, err}
 		}()
 	} else {
 		svgErr <- nil
 		fields <- fieldsResult{}
 	}
-	stderr, pdfErr := typst(ctx, dir, "resume.pdf", "--pdf-standard", "ua-1")
+	stderr, pdfErr := typst(ctx, dir, main, "output.pdf", "--pdf-standard", "ua-1")
 	if ce, ok := errors.AsType[*compileError](pdfErr); ok && strings.Contains(ce.Output, uaErrorTag) {
 		out.UAErrors = slices.DeleteFunc(strings.Split(ce.Output, "\n"), func(l string) bool { return !strings.Contains(l, uaErrorTag) })
-		stderr, pdfErr = typst(ctx, dir, "resume.pdf")
+		stderr, pdfErr = typst(ctx, dir, main, "output.pdf")
 	}
 	f := <-fields
 	if err := errors.Join(pdfErr, <-svgErr); err != nil {
@@ -106,6 +116,7 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 		out.Warnings = append(out.Warnings, "click-to-edit map unavailable: "+f.err.Error())
 	}
 	out.Fields = fieldBoxes(f.marks)
+	out.Columns = columnBoxes(f.marks)
 
 	if svg {
 		paths, err := filepath.Glob(filepath.Join(dir, "page-*.svg")) // sorted; {0p} zero-pads
@@ -128,11 +139,11 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 // uaErrorTag starts Typst's PDF/UA-1 violation messages.
 const uaErrorTag = "PDF/UA-1 error"
 
-// typst compiles dir/resume.typ to dir/output. It runs inside dir so
-// diagnostics name files relative to the template ("resume.typ:14:18: …").
-func typst(ctx context.Context, dir, output string, flags ...string) (string, error) {
+// typst compiles dir/main to dir/output. It runs inside dir so diagnostics
+// name files relative to the template ("resume.typ:14:18: …").
+func typst(ctx context.Context, dir, main, output string, flags ...string) (string, error) {
 	args := append([]string{"compile", "--diagnostic-format", "short"}, flags...)
-	cmd := exec.CommandContext(ctx, "typst", append(args, "resume.typ", output)...)
+	cmd := exec.CommandContext(ctx, "typst", append(args, main, output)...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

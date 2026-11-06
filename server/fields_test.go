@@ -21,6 +21,8 @@ func TestFieldBoxes(t *testing.T) {
 		// Split across pages: no box.
 		{Path: "split", Edge: "top", Page: 1, X: 80, Y: 700, Size: 10, Width: 400},
 		{Path: "split", Edge: "bottom", Page: 2, X: 80, Y: 60, Size: 10},
+		// A column's cell is layout, not a value: no box to click.
+		{Path: "cell", Edge: "cell", Page: 1, X: 80, Y: 120, Width: 200, Height: 50},
 	}
 	got := fieldBoxes(marks)
 	want := []FieldBox{
@@ -46,7 +48,7 @@ func TestRenderFieldMap(t *testing.T) {
 	if _, err := exec.LookPath("typst"); err != nil {
 		t.Skip("typst not installed")
 	}
-	out, err := render(context.Background(), "../template/resume.typ", []byte(exportDoc), true)
+	out, err := renderResume(context.Background(), "../template/resume.typ", []byte(exportDoc), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +77,11 @@ func TestRenderFieldMap(t *testing.T) {
 	// The empty second bullet isn't drawn, so it has nothing to click.
 	if slices.Contains(paths, "sections.1.items.1.bullets.1") {
 		t.Errorf("empty bullet has a box")
+	}
+	// The side-by-side column's cell spans the line width from the left margin.
+	if len(out.Columns) != 1 || out.Columns[0].Path != "sections.3.columns.0" ||
+		!near(out.Columns[0].X, 0.6*72) || !near(out.Columns[0].W, 612-2*0.6*72) || out.Columns[0].H <= 0 {
+		t.Errorf("columns = %+v, want one cell for sections.3.columns.0 spanning the line", out.Columns)
 	}
 }
 

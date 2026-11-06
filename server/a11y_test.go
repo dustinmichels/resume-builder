@@ -26,7 +26,7 @@ func renderChecks(t *testing.T, doc string, edit func(string) string) []Check {
 	if err := os.WriteFile(path, []byte(edit(string(tpl))), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out, err := render(context.Background(), path, []byte(doc), false)
+	out, err := renderResume(context.Background(), path, []byte(doc), false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,14 +1,17 @@
 package main
 
-// Exported copies kept beside a resume's documents: resume.json and every
-// saved version get a Markdown and a PDF file of the same name,
+// Exported copies kept beside a resume's documents: resume.json, every saved
+// version and every cover letter get a Markdown, a Word and a PDF file of the
+// same name,
 //
-//	<dataDir>/<resume name>/resume.md, resume.pdf
-//	<dataDir>/<resume name>/versions/<version id>.md, <version id>.pdf
+//	<dataDir>/<resume name>/resume.md, resume.docx, resume.pdf
+//	<dataDir>/<resume name>/versions/<version id>/resume.md, resume.docx, resume.pdf
+//	<dataDir>/<resume name>/cover-letters/<letter name>.md, .docx, .pdf
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,7 +20,7 @@ import (
 )
 
 // exportExts are the files written beside each resume document.
-var exportExts = []string{".md", ".pdf"}
+var exportExts = []string{".md", ".docx", ".pdf"}
 
 type syncFailure struct {
 	File  string `json:"file"`
@@ -30,9 +33,9 @@ type syncResult struct {
 	Failed  []syncFailure `json:"failed"`
 }
 
-// syncFiles brings the Markdown and PDF beside resume.json and each version
-// of a resume up to date. A document that fails to render is reported and
-// the rest still sync.
+// syncFiles brings the Markdown, Word and PDF beside resume.json, each version and
+// each cover letter of a resume up to date. A document that fails to render
+// is reported and the rest still sync.
 func (s *server) syncFiles(w http.ResponseWriter, r *http.Request) {
 	dir, unlock, ok := s.lockDir(w, false)
 	if !ok {
@@ -53,14 +56,18 @@ func (s *server) syncFiles(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
+	letters, err := listLetters(rdir)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, err)
+		return
+	}
 	docs := []string{resumeFile}
 	for _, v := range versions {
-		docs = append(docs, filepath.Join(versionsDir, v.ID+".json"))
+		docs = append(docs, filepath.Join(versionsDir, v.ID, resumeFile))
 	}
 
 	res := syncResult{Written: []string{}, Failed: []syncFailure{}}
-	for _, rel := range docs {
-		written, err := s.syncExports(r.Context(), filepath.Join(rdir, rel), tpl.ModTime())
+	record := func(rel string, written []string, err error) {
 		base := filepath.ToSlash(strings.TrimSuffix(rel, ".json"))
 		for _, ext := range written {
 			res.Written = append(res.Written, base+ext)
@@ -69,13 +76,40 @@ func (s *server) syncFiles(w http.ResponseWriter, r *http.Request) {
 			res.Failed = append(res.Failed, syncFailure{File: filepath.ToSlash(rel), Error: err.Error()})
 		}
 	}
+	for _, rel := range docs {
+		written, err := s.syncResume(r.Context(), filepath.Join(rdir, rel), tpl.ModTime())
+		record(rel, written, err)
+	}
+	if len(letters) > 0 {
+		// A letter's PDF shows its resume's name and style, so it is redrawn
+		// when the resume or the letter template changes too.
+		resumeRaw, rerr := os.ReadFile(filepath.Join(rdir, resumeFile))
+		rfi, ferr := os.Stat(filepath.Join(rdir, resumeFile))
+		lfi, lerr := os.Stat(s.letterTemplatePath)
+		depsErr := errors.Join(rerr, ferr, lerr)
+		for _, l := range letters {
+			rel := filepath.Join(lettersDir, l.ID+".json")
+			if depsErr != nil {
+				record(rel, nil, depsErr)
+				continue
+			}
+			written, err := s.syncLetter(r.Context(), filepath.Join(rdir, rel), resumeRaw, latest(rfi.ModTime(), lfi.ModTime()))
+			record(rel, written, err)
+		}
+	}
 	writeJSON(w, res)
 }
 
-// syncExports updates the exports beside the JSON document at path and
-// returns the extensions it wrote. The Markdown is rewritten when its content
-// differs; the PDF when it is older than the document or the template.
-func (s *server) syncExports(ctx context.Context, path string, tplModified time.Time) ([]string, error) {
+func latest(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+// syncResume updates the exports beside the resume JSON at path (the
+// resume or a version).
+func (s *server) syncResume(ctx context.Context, path string, tplModified time.Time) ([]string, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -88,25 +122,62 @@ func (s *server) syncExports(ctx context.Context, path string, tplModified time.
 	if err != nil {
 		return nil, err
 	}
-	base := strings.TrimSuffix(path, ".json")
-	var written []string
+	docx, err := docxResume(doc)
+	if err != nil {
+		return nil, err
+	}
+	return writeExports(strings.TrimSuffix(path, ".json"), markdownResume(doc), docx, latest(fi.ModTime(), tplModified), func() (*rendered, error) {
+		return renderResume(ctx, s.templatePath, raw, false)
+	})
+}
 
-	md := markdownResume(doc)
-	if old, err := os.ReadFile(base + ".md"); err != nil || !bytes.Equal(old, md) {
-		if err := writeFileAtomic(base+".md", md); err != nil {
+// syncLetter updates the exports beside the letter JSON at path; its PDF is
+// also redrawn when older than depsModified.
+func (s *server) syncLetter(ctx context.Context, path string, resumeRaw []byte, depsModified time.Time) ([]string, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	data, ld, err := letterData(resumeRaw, raw)
+	if err != nil {
+		return nil, err
+	}
+	docx, err := docxLetter(ld)
+	if err != nil {
+		return nil, err
+	}
+	return writeExports(strings.TrimSuffix(path, ".json"), markdownLetter(ld), docx, latest(fi.ModTime(), depsModified), func() (*rendered, error) {
+		return render(ctx, s.letterTemplatePath, map[string][]byte{"data.json": data}, false)
+	})
+}
+
+// writeExports writes base.md, base.docx and base.pdf and returns the
+// extensions it wrote. The Markdown and Word files are rewritten when their
+// content differs (both are built deterministically); the PDF when it is
+// older than newest.
+func writeExports(base string, md, docx []byte, newest time.Time, renderPDF func() (*rendered, error)) ([]string, error) {
+	var written []string
+	for _, f := range []struct {
+		ext  string
+		body []byte
+	}{{".md", md}, {".docx", docx}} {
+		if old, err := os.ReadFile(base + f.ext); err == nil && bytes.Equal(old, f.body) {
+			continue
+		}
+		if err := writeFileAtomic(base+f.ext, f.body); err != nil {
 			return written, err
 		}
-		written = append(written, ".md")
+		written = append(written, f.ext)
 	}
 
-	newest := fi.ModTime()
-	if tplModified.After(newest) {
-		newest = tplModified
-	}
 	if pdf, err := os.Stat(base + ".pdf"); err == nil && !pdf.ModTime().Before(newest) {
 		return written, nil
 	}
-	out, err := render(ctx, s.templatePath, raw, false)
+	out, err := renderPDF()
 	if err != nil {
 		return written, err
 	}

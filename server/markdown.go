@@ -11,39 +11,46 @@ var (
 	mdOrdered   = regexp.MustCompile(`^(\d+)([.)])(\s|$)`)
 )
 
+// mdWriter builds a Markdown document block by block.
+type mdWriter struct{ strings.Builder }
+
+func (b *mdWriter) block(nodes []inline) {
+	if s := mdBlock(nodes, ""); s != "" {
+		b.WriteString(s + "\n\n")
+	}
+}
+
+func (b *mdWriter) list(items []string) {
+	var wrote bool
+	for _, it := range items {
+		if s := mdBlock(parseRich(it), "  "); s != "" {
+			b.WriteString("- " + s + "\n")
+			wrote = true
+		}
+	}
+	if wrote {
+		b.WriteString("\n")
+	}
+}
+
+func (b *mdWriter) heading(level int, s string) {
+	if s = mdBlock(plain(s), ""); s != "" {
+		if strings.HasSuffix(s, "#") { // a trailing # would read as a closing sequence
+			s = s[:len(s)-1] + `\#`
+		}
+		b.WriteString(strings.Repeat("#", level) + " " + s + "\n\n")
+	}
+}
+
+func (b *mdWriter) bytes() []byte { return []byte(strings.TrimRight(b.String(), "\n") + "\n") }
+
 // markdownResume renders the resume as Markdown. Inline markup is kept as
 // written; everything else is escaped so it reads back as the same text.
 func markdownResume(doc Doc) []byte {
-	var b strings.Builder
-	block := func(nodes []inline) {
-		if s := mdBlock(nodes, ""); s != "" {
-			b.WriteString(s + "\n\n")
-		}
-	}
-	list := func(items []string) {
-		var wrote bool
-		for _, it := range items {
-			if s := mdBlock(parseRich(it), "  "); s != "" {
-				b.WriteString("- " + s + "\n")
-				wrote = true
-			}
-		}
-		if wrote {
-			b.WriteString("\n")
-		}
-	}
-	heading := func(level int, s string) {
-		if s = mdBlock(plain(s), ""); s != "" {
-			if strings.HasSuffix(s, "#") { // a trailing # would read as a closing sequence
-				s = s[:len(s)-1] + `\#`
-			}
-			b.WriteString(strings.Repeat("#", level) + " " + s + "\n\n")
-		}
-	}
-
+	var b mdWriter
 	if bs := doc.Basics; bs != nil {
-		heading(1, bs.Name)
-		block(plain(strings.Join(nonEmpty(bs.Headline), " // ")))
+		b.heading(1, bs.Name)
+		b.block(plain(strings.Join(nonEmpty(bs.Headline), " // ")))
 		var contacts []string
 		for _, c := range bs.Contacts {
 			switch {
@@ -61,22 +68,22 @@ func markdownResume(doc Doc) []byte {
 
 	for _, sec := range doc.Sections {
 		if sec.Kind != "columns" || sec.Variant != "sections" {
-			heading(2, sec.Title)
+			b.heading(2, sec.Title)
 		}
 		switch sec.Kind {
 		case "text":
 			for _, p := range sec.Paragraphs {
-				block(parseRich(p))
+				b.block(parseRich(p))
 			}
 		case "entries":
 			for _, it := range sec.Items {
 				if it.Type == "label" {
 					if strings.TrimSpace(it.Text) != "" {
-						block([]inline{{Kind: inlineBold, Kids: parseRich(it.Text)}})
+						b.block([]inline{{Kind: inlineBold, Kids: parseRich(it.Text)}})
 					}
 					continue
 				}
-				heading(3, strings.Join(nonEmpty([]string{it.Title, it.Date}), " | "))
+				b.heading(3, strings.Join(nonEmpty([]string{it.Title, it.Date}), " | "))
 				line := parseRich(it.Subtitle)
 				if strings.TrimSpace(it.Location) != "" {
 					if strings.TrimSpace(it.Subtitle) != "" {
@@ -84,21 +91,21 @@ func markdownResume(doc Doc) []byte {
 					}
 					line = append(line, plain(it.Location)...)
 				}
-				block(line)
-				list(it.Bullets)
+				b.block(line)
+				b.list(it.Bullets)
 			}
 		case "columns":
 			for _, col := range sec.Columns {
 				if sec.Variant == "sections" {
-					heading(2, col.Title)
+					b.heading(2, col.Title)
 				} else if strings.TrimSpace(col.Title) != "" {
-					block([]inline{{Kind: inlineBold, Kids: plain(col.Title)}})
+					b.block([]inline{{Kind: inlineBold, Kids: plain(col.Title)}})
 				}
-				list(col.Lines)
+				b.list(col.Lines)
 			}
 		}
 	}
-	return []byte(strings.TrimRight(b.String(), "\n") + "\n")
+	return b.bytes()
 }
 
 // mdBlock renders inline nodes as one Markdown block. Line breaks typed in the

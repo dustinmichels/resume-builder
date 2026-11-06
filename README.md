@@ -5,9 +5,11 @@ machines (applicant tracking systems, parsers) will read from the PDF.
 
 - **Frontend** (`web/`): Vue 3 + Vite, run with Bun. Forms, drag-and-drop reordering, click-to-edit on the live
   preview, rich-text formatting.
-- **Backend** (`server/`): Go, standard library only. Stores resumes and their versions, renders them with Typst, extracts the
-  PDF text layer with `pdftotext`, runs readability checks, and writes the Word and Markdown exports.
-- **Template** (`template/resume.typ`): Typst. Re-read on every render, so template edits show up live.
+- **Backend** (`server/`): Go, standard library only. Stores resumes, their versions and cover letters, renders them
+  with Typst, extracts the PDF text layer with `pdftotext`, runs readability checks, and writes the Word and Markdown
+  exports.
+- **Templates** (`template/resume.typ`, `template/cover-letter.typ`): Typst. Re-read on every render, so template
+  edits show up live.
 - **Data** (your data folder, `~/resume-builder/` by default): one folder per resume, autosaved from the editor.
   See [Your files](#your-files).
 
@@ -38,17 +40,22 @@ Everything lives in plain files in the data folder, so it can be backed up, sync
 ~/resume-builder/
   Resume/
     resume.json                               the resume, autosaved as you edit
-    resume.md, resume.pdf                     Markdown and PDF copies, written by Sync files
+    resume.md, .docx, .pdf                    Markdown, Word and PDF copies, written by Sync files
     additional/                               supporting details, never printed
       contact.json                            your contact details (Contact tab)
       supervisors.json                        a supervisor per job (Supervisors tab)
+    cover-letters/
+      MPO Data Analyst.json                   a cover letter (Cover letters tab)
+      MPO Data Analyst.md, .docx, .pdf        its Markdown, Word and PDF copies, written by Sync files
     versions/
-      20261106-153000 Sent to Acme.json       a saved version: timestamp, then its label
-      20261106-153000 Sent to Acme.md, .pdf   its Markdown and PDF copies, written by Sync files
+      20261106-153000 Sent to Acme/           a saved version: timestamp, then its label
+        resume.json                           the resume as it was saved
+        resume.md, .docx, .pdf                its Markdown, Word and PDF copies, written by Sync files
   Designer CV/
     resume.json
   .trash/
     Old draft 20261101-090000/                deleted resumes, moved here rather than erased
+    Resume – Acme 20261102-100000.json        deleted cover letters, named after their resume
 ```
 
 Each folder holding a `resume.json` is a resume; its folder name is the name shown in the editor, so renaming one
@@ -57,19 +64,39 @@ resume as a version labelled `Before restoring …`, so a restore can always be 
 folder, versions included, into `.trash`; empty that folder by hand when you no longer need them. The folder button in
 the toolbar opens the current resume's folder in Finder (Explorer on Windows, the default file manager elsewhere).
 
-**Sync files** (next to the save status in the toolbar) writes a Markdown and a PDF copy beside `resume.json` and each
-version, named after the JSON file. It saves pending edits first and skips copies already up to date: a Markdown file
-is rewritten when its content changes, a PDF when it is older than its JSON or the template. A file that fails to
-render is reported and the rest still sync. Deleting a version deletes its copies. The button reads **Files synced**
-until the resume next changes.
+**Sync files** (next to the save status in the toolbar) writes a Markdown, a Word and a PDF copy beside `resume.json`,
+each version and each cover letter, named after the JSON file. It saves pending edits first and skips copies already up
+to date: a Markdown or Word file is rewritten when its content changes, a PDF when it is older than its JSON or the
+template (for a letter, also its resume's `resume.json`, whose name and style it shows). A file that fails to render is reported
+and the rest still sync. Deleting a version or letter deletes its copies. The button reads **Files synced** until the
+resume next changes.
 
 `additional/contact.json` and `additional/supervisors.json` hold details for job applications that don't belong on the page: your name,
-email, phone and mailing address, and for each entry a supervisor's name, position, email, phone and whether they may be contacted. They are
+email, phone and mailing address, and for each entry a supervisor's name, position, email, phone, mailing address and whether they may be contacted. They are
 written only once you fill something in, autosave with the resume, and are never rendered or exported. They move,
 duplicate and go to `.trash` with their resume, but versions don't include them: restoring a version leaves them as
 they are, and a copy of a version gets the current ones. Supervisors are matched to entries by the entry's `id`; each
 also records the entry's title and organization (`job`), so one whose entry you delete is still listed, under
 **No longer in the resume**, until you remove it.
+
+## Cover letters
+
+The **Cover letters** tab holds any number of letters for the open resume, each saved as
+`cover-letters/<name>.json` in its folder; name them after the job. While that tab shows a letter, the preview,
+checks, downloads and undo follow the letter; every other tab shows the resume.
+
+`template/cover-letter.typ` follows `samples/cover-letter`: the resume's name top right in its accent color, lines of
+your choice beneath it (a new letter starts with the resume's last headline part, often the location), a heading
+with the resume's section square hung in the margin, then the greeting, paragraphs, subheadings and bullet lists, and
+an optional closing above your name. A paragraph right after another runs on with an indented first line; one after a
+heading or list starts flush. The name, accent color, heading font and margin come from the resume, so changing them
+there restyles its letters; the body font and size are the letter's own (Libertinus Serif, which Typst bundles, by
+default). The template reads `data.json` as `{basics, style, letter}`.
+
+Letters autosave with the resume and are clickable on the page (Enter in a paragraph starts the next one). Their
+checks are the resume's Parsers, Screen readers and Links checks, without the resume-only ones (dot leaders, entry
+dates, email); a letter longer than one page gets a note. They move, duplicate and go to `.trash` with their resume;
+versions don't include them. Deleting a letter moves it alone to `.trash`.
 
 ## Readable by people and machines
 
@@ -111,7 +138,8 @@ findings by reader, plus the dates:
 
 ## Downloads
 
-**Download PDF** is its own toolbar button; the other formats are under the **Download** menu next to it.
+**Download PDF** is its own toolbar button; the other formats are under the **Download** menu next to it. On the
+**Cover letters** tab they export the letter, named `<name> - Cover Letter - <letter>`.
 
 - **PDF**: the Typst render you see in the preview.
 - **Word** (`.docx`): the same content and style, built from native Word features so it stays editable and
@@ -119,24 +147,31 @@ findings by reader, plus the dates:
   Column sections stack vertically instead of using tables.
 - **Markdown** (`.md`): inline `**bold**`/`*italic*`/links kept as written, everything else escaped. The
   preview's **Markdown** tab shows it rendered or as source, updating as you type.
-- **Text** and **JSON**: the PDF text layer and the resume content.
+- **Text** and **JSON**: the PDF text layer and the content.
 
 ## Editing
 
 Click any text on the **Page** preview to edit that value in place: a small editor opens next to it and the page
 re-renders as you type. In bullets, paragraphs, column lines and headline parts, Enter adds the next item and
 Backspace in an empty one removes it; Tab and Shift+Tab move between values. Esc closes the editor. The sidebar
-follows along: it switches to **Content**, expands the section and entry holding the value, scrolls to its field
-and briefly highlights it.
+follows along: it switches to **Content** (or **Cover letters**, for a letter), expands the section and entry holding
+the value, scrolls to its field and briefly highlights it.
 
 The template tags every editable value with an invisible marker (`field`/`block-field` in `template/resume.typ`);
 the server reads their positions with `typst eval 'query(<field>)'` and sends them with each preview. Markers don't
 change the layout or the PDF text layer. A custom template without them still renders; it just isn't clickable.
 
+In a side-by-side columns section, the dashed line between two columns on the **Page** preview moves where the next
+column starts: drag it, or focus it and use the arrow keys (Shift for bigger steps). The left column's share of the
+line width is saved as its `width` (and the right one's, unless it's the last column, so its right edge stays put);
+double-click the line to clear them, so the columns fit their content again. The template marks each of these cells
+(a `"cell"` marker with its size) and the preview sends their positions as `columns`.
+
 ⌘Z / Ctrl+Z (or the arrows next to the save status) undoes resume edits, including inside text fields; ⇧⌘Z /
 Ctrl+Y redoes. Typing with pauses under a second counts as one step. History covers the resume (Content and Style
-tabs, the preview editor) and resets when you open another resume or restore a version; the Contact, Supervisors and
-Versions fields keep the browser's own per-field undo.
+tabs, the preview editor) and resets when you open another resume or restore a version; on the **Cover letters** tab
+the same keys and arrows act on the open letter, which has its own history. The Contact, Supervisors and Versions
+fields keep the browser's own per-field undo.
 
 The eye button on a section, entry, subheading or column hides it from the page without deleting it: it stays in
 `resume.json` (as `"hidden": true`) and in the editor, dimmed, but is left out of the PDF, the Word, Markdown and text
@@ -146,8 +181,9 @@ exports, the attached JSON, the PDF keywords and the checks. Click the eye again
 
 Select text and press ⌘B, ⌘I or ⌘K (link) to format it; Shift+Enter adds a line break. Formatting is stored as
 `**bold**`, `*italic*`, `***bold italic***` and `[label](https://link)` in paragraphs, subtitles, bullets,
-subheadings and column lines; other fields are plain text. Content is rendered as literal text, so characters like
-`#`, `$` and `@` are safe. The schema lives in `web/src/types.ts`.
+subheadings and column lines, and in a letter's paragraphs, bullets and lines under the name; other fields are plain
+text. Content is rendered as literal text, so characters like `#`, `$` and `@` are safe. The schema lives in
+`web/src/types.ts`.
 
 Column lines can carry an icon, hung in the margin to the left of the line. Click the image button beside a line in
 the sidebar, an icon on the page, or the image button on a line's page editor, then search Lucide's icon set (Enter

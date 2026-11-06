@@ -70,6 +70,12 @@ export interface Column {
   lines: string[]
   /** The icon beside each line, by line index; null or missing for none. */
   icons?: (LineIcon | null)[]
+  /**
+   * Side-by-side sections only: the column's share of the line width (0–1),
+   * set by dragging the divider after it. Missing: it hugs its content. The
+   * last visible column always takes the remaining width.
+   */
+  width?: number
 }
 
 export interface ColumnsSection {
@@ -101,6 +107,57 @@ export interface ResumeDoc {
   style: Style
 }
 
+/** A paragraph of the letter body; consecutive paragraphs run on, first lines indented. */
+export interface LetterParagraph {
+  id: string
+  kind: 'paragraph'
+  text: string
+}
+
+/** A small heading within the letter body, e.g. "My experience". */
+export interface LetterHeading {
+  id: string
+  kind: 'heading'
+  text: string
+}
+
+export interface LetterBullets {
+  id: string
+  kind: 'bullets'
+  items: string[]
+}
+
+export type LetterBlock = LetterParagraph | LetterHeading | LetterBullets
+export type LetterBlockKind = LetterBlock['kind']
+
+/**
+ * A cover letter, saved as cover-letters/<name>.json in its resume's folder.
+ * The name at the top, accent color, heading font and margin come from the
+ * resume; template/cover-letter.typ renders it. Paragraphs, bullets and header
+ * lines accept inline markup; the other fields are plain text.
+ */
+export interface CoverLetter {
+  /** The heading above the greeting, e.g. "Cover letter". */
+  title: string
+  /** Lines under the name, e.g. the location. */
+  header: string[]
+  greeting: string
+  blocks: LetterBlock[]
+  /** e.g. "Sincerely,"; the name is printed below it. Empty leaves both off. */
+  closing: string
+  style: { font: string; fontSize: number }
+}
+
+/** What the letter template renders: the letter with its resume's basics and style. */
+export interface LetterDoc {
+  basics: Basics
+  style: Style
+  letter: CoverLetter
+}
+
+/** A document the preview renders and edits in place. */
+export type PageDoc = ResumeDoc | LetterDoc
+
 // Side documents: kept in the resume's folder, never printed or exported.
 
 /** contact.json: personal details for filling in applications. */
@@ -131,6 +188,12 @@ export interface Supervisor {
   position: string
   email: string
   phone: string
+  /** Street lines, one per line. */
+  address: string
+  city: string
+  region: string
+  postalCode: string
+  country: string
   /** Whether the employer may contact this supervisor. */
   canContact: boolean
 }
@@ -157,6 +220,8 @@ export interface Preview {
   markdown: string
   /** Where each editable value sits on the rendered pages. */
   fields: FieldBox[]
+  /** Where each column of side-by-side columns sections sits ("sections.4.columns.1"), unpadded. */
+  columns: FieldBox[]
 }
 
 /**
@@ -180,8 +245,8 @@ export interface Settings {
   defaultDataDir: string
 }
 
-/** A saved resume; `id` is its folder name and display name. */
-export interface ResumeSummary {
+/** A saved resume or cover letter; `id` is its file or folder name and display name. */
+export interface DocSummary {
   id: string
   /** RFC 3339 */
   modified: string

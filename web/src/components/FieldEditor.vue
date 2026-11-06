@@ -3,18 +3,18 @@ import { ImagePlus } from '@lucide/vue'
 import { computed, onMounted, useTemplateRef } from 'vue'
 import { describe, getContact, getString, iconSlotOf, isRich, listOf, setString } from '../fieldPath'
 import { setIcon, spliceIcons } from '../lineIcons'
-import type { LineIcon, ResumeDoc } from '../types'
+import type { LineIcon, PageDoc } from '../types'
 import IconPicker from './IconPicker.vue'
 import RichText from './RichText.vue'
 
 // Edits one value of the document in place. The parent keys this component by
 // the edited path, so every switch mounts fresh and focuses the new value.
-const { doc, path } = defineProps<{ doc: ResumeDoc; path: string }>()
+const { doc, path } = defineProps<{ doc: PageDoc; path: string }>()
 const emit = defineEmits<{ close: []; navigate: [path: string]; tab: [direction: 1 | -1] }>()
 
 const label = computed(() => describe(doc, path))
 const contact = computed(() => getContact(doc, path))
-const rich = computed(() => isRich(path))
+const rich = computed(() => isRich(doc, path))
 const list = computed(() => listOf(doc, path))
 const value = computed(() => getString(doc, path) ?? '')
 const iconSlot = computed(() => iconSlotOf(doc, path))
@@ -55,9 +55,9 @@ function pickIcon(icon: LineIcon | null) {
 function onEnter() {
   const l = list.value
   if (!l) return emit('close')
-  l.array.splice(l.index + 1, 0, '')
+  l.array.splice(l.index + 1, 0, l.create())
   if (l.column) spliceIcons(l.column, l.index + 1, 0, 1)
-  emit('navigate', `${l.base}.${l.index + 1}`)
+  emit('navigate', `${l.base}.${l.index + 1}${l.suffix}`)
 }
 
 function removeItem() {
@@ -65,8 +65,8 @@ function removeItem() {
   if (!l) return
   l.array.splice(l.index, 1)
   if (l.column) spliceIcons(l.column, l.index, 1)
-  if (l.index > 0) emit('navigate', `${l.base}.${l.index - 1}`)
-  else if (l.array.length) emit('navigate', `${l.base}.0`)
+  if (l.index > 0) emit('navigate', `${l.base}.${l.index - 1}${l.suffix}`)
+  else if (l.array.length) emit('navigate', `${l.base}.0${l.suffix}`)
   else emit('close')
 }
 

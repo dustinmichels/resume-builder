@@ -34,12 +34,24 @@ type docxWriter struct {
 
 type runProps struct {
 	bold, italic, caps bool
+	font               string // "" inherits
 	color              string
 	size               float64 // multiple of the base font size; 0 inherits
 }
 
 func docxResume(doc Doc) ([]byte, error) {
-	d := &docxWriter{st: *doc.Style, accent: "000000"}
+	d := newDocxWriter(*doc.Style)
+	d.document(doc)
+	name := ""
+	if doc.Basics != nil {
+		name = doc.Basics.Name
+	}
+	return d.pack(name+" – Resume", name, d.styles(), d.numbering())
+}
+
+// newDocxWriter starts a document in style st, filling in missing values.
+func newDocxWriter(st Style) *docxWriter {
+	d := &docxWriter{st: st, accent: "000000"}
 	if m := hexColor.FindStringSubmatch(d.st.Accent); m != nil {
 		d.accent = strings.ToUpper(m[1])
 	}
@@ -52,21 +64,20 @@ func docxResume(doc Doc) ([]byte, error) {
 	if d.st.Font == "" {
 		d.st.Font = "Helvetica"
 	}
-	d.document(doc)
+	return d
+}
 
-	name := ""
-	if doc.Basics != nil {
-		name = doc.Basics.Name
-	}
+// pack zips the written body with the given styles and numbering parts.
+func (d *docxWriter) pack(title, author, styles, numbering string) ([]byte, error) {
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
 	parts := []struct{ name, body string }{
 		{"[Content_Types].xml", contentTypes},
 		{"_rels/.rels", packageRels},
-		{"docProps/core.xml", fmt.Sprintf(coreXML, xmlText(name+" – Resume"), xmlText(name))},
+		{"docProps/core.xml", fmt.Sprintf(coreXML, xmlText(title), xmlText(author))},
 		{"word/_rels/document.xml.rels", d.documentRels()},
-		{"word/styles.xml", d.styles()},
-		{"word/numbering.xml", d.numbering()},
+		{"word/styles.xml", styles},
+		{"word/numbering.xml", numbering},
 		{"word/document.xml", fmt.Sprintf(documentXML, d.body.String(), d.twips(d.st.Margin*72))},
 	}
 	for _, p := range parts {
@@ -236,6 +247,9 @@ func (d *docxWriter) run(text string, p runProps) string {
 	}
 	var b strings.Builder
 	b.WriteString("<w:r><w:rPr>")
+	if p.font != "" {
+		fmt.Fprintf(&b, `<w:rFonts w:ascii="%[1]s" w:hAnsi="%[1]s" w:cs="%[1]s"/>`, xmlText(p.font))
+	}
 	if p.bold {
 		b.WriteString("<w:b/>")
 	}

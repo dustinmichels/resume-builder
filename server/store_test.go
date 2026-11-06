@@ -61,7 +61,7 @@ func (l *library) choose(t *testing.T) string {
 
 func (l *library) ids(t *testing.T) []string {
 	t.Helper()
-	var list []resumeSummary
+	var list []summary
 	decodeInto(t, l.call(t, "GET", "/api/resumes", "", 200), &list)
 	var ids []string
 	for _, r := range list {
