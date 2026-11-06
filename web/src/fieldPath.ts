@@ -2,7 +2,7 @@
 // indexes into the unfiltered arrays: "basics.name",
 // "sections.2.items.0.bullets.3", "basics.contacts.1" (a whole contact).
 // The server reports them with each rendered field (Preview.fields).
-import type { Contact, ResumeDoc } from './types'
+import type { Column, Contact, ResumeDoc } from './types'
 
 export function getAt(doc: ResumeDoc, path: string): unknown {
   let cur: unknown = doc
@@ -37,9 +37,28 @@ export function getContact(doc: ResumeDoc, path: string): Contact | undefined {
   return typeof value?.text === 'string' ? value : undefined
 }
 
+const ICON = /^(sections\.\d+\.columns\.\d+)\.icons\.(\d+)$/
+
+/** A column line's icon slot ("sections.4.columns.1.icons.2"); it may hold no icon. */
+export interface IconSlot {
+  column: Column
+  index: number
+}
+
+/** The icon slot an icons path addresses, if its line exists; null for any other path. */
+export function iconSlotOf(doc: ResumeDoc, path: string): IconSlot | null {
+  const m = ICON.exec(path)
+  if (!m) return null
+  const column = getAt(doc, m[1]!) as Column | undefined
+  const index = Number(m[2])
+  return typeof column?.lines?.[index] === 'string' ? { column, index } : null
+}
+
 /** Whether the path still addresses an editable value. */
 export function resolves(doc: ResumeDoc, path: string): boolean {
-  return CONTACT.test(path) ? getContact(doc, path) !== undefined : getString(doc, path) !== undefined
+  if (CONTACT.test(path)) return getContact(doc, path) !== undefined
+  if (ICON.test(path)) return iconSlotOf(doc, path) !== null
+  return getString(doc, path) !== undefined
 }
 
 const RICH = /^sections\.\d+\.(?:paragraphs\.\d+|items\.\d+\.(?:subtitle|text|bullets\.\d+)|columns\.\d+\.lines\.\d+)$/
@@ -55,13 +74,18 @@ export interface ListItem {
   index: number
   /** Path of the array itself. */
   base: string
+  /** The column, when the list is its lines (which keep icons beside them). */
+  column?: Column
 }
 
 export function listOf(doc: ResumeDoc, path: string): ListItem | null {
   const m = LIST_ITEM.exec(path)
   if (!m) return null
-  const array = getAt(doc, m[1]!)
-  return Array.isArray(array) ? { array, index: Number(m[2]), base: m[1]! } : null
+  const base = m[1]!
+  const array = getAt(doc, base)
+  if (!Array.isArray(array)) return null
+  const column = base.endsWith('.lines') ? (getAt(doc, base.slice(0, -'.lines'.length)) as Column) : undefined
+  return { array, index: Number(m[2]), base, column }
 }
 
 const ENTRY_FIELDS: Record<string, string> = {
@@ -89,6 +113,7 @@ export function describe(doc: ResumeDoc, path: string): string {
   }
   if (field === 'columns' && section.kind === 'columns') {
     if (sub === 'title') return 'Column heading'
+    if (sub === 'icons') return `Icon${inName(section.columns[Number(b)]?.title || section.title)}`
     return `Line${inName(section.columns[Number(b)]?.title || section.title)}`
   }
   return 'Text'

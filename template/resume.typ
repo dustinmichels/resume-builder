@@ -222,9 +222,25 @@
   }
 }
 
+// A column line's icon (`icons`, parallel to `lines`): a Lucide SVG chosen in
+// the editor, drawn in the accent color as a vector image tagged as an
+// artifact, so it stays out of the text layer and away from screen readers.
+// Placed out of flow, centered on the x-height, so it never widens line spacing.
+#let line-icon(svg) = pdf.artifact(box(width: 1.05em, place(dy: -0.88em, image(
+  bytes(svg.replace("currentColor", accent.to-hex())),
+  format: "svg",
+  height: 1.05em,
+))))
+
 #let column-lines(c, at) = {
+  let icons = c.at("icons", default: none) // absent, or null in JSON
   for (i, l) in c.lines.enumerate().filter(((i, l)) => l != "") {
-    block-field(at + ".lines." + str(i), par(rich(l)))
+    let icon = if icons != none { icons.at(i, default: none) }
+    // Hung into the left padding, so the text stays aligned with icon-less lines.
+    let hang = if icon != none {
+      h(-1.6em) + field(at + ".icons." + str(i), line-icon(icon.svg)) + h(0.55em)
+    }
+    block-field(at + ".lines." + str(i), par(hang + rich(l)))
   }
 }
 

@@ -46,6 +46,41 @@ export function richToText(src: string): string {
   return src.replace(RICH, (_, boldItalic, bold, italic, label) => label ?? richToText(boldItalic ?? bold ?? italic))
 }
 
+const collator = new Intl.Collator(undefined, { sensitivity: 'accent' })
+
+/**
+ * Sorts a comma-separated list A–Z, ignoring case and formatting. Commas inside
+ * parentheses, brackets, bold, italic or links don't split, so
+ * "R, Python (*Pandas, Django*)" has two items.
+ */
+export function sortCommaList(src: string): string {
+  // Formatted runs and links are skipped whole: start index → end index.
+  const spanEnd = new Map([...src.matchAll(RICH)].map((m) => [m.index, m.index + m[0].length]))
+  const items: string[] = []
+  let start = 0
+  let depth = 0
+  for (let i = 0; i < src.length; i++) {
+    const end = spanEnd.get(i)
+    if (end !== undefined) {
+      i = end - 1
+      continue
+    }
+    const c = src[i]
+    if (c === '(' || c === '[') depth++
+    else if ((c === ')' || c === ']') && depth > 0) depth--
+    else if (c === ',' && depth === 0) {
+      items.push(src.slice(start, i))
+      start = i + 1
+    }
+  }
+  items.push(src.slice(start))
+  return items
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .sort((a, b) => collator.compare(richToText(a), richToText(b)))
+    .join(', ')
+}
+
 interface Format {
   bold: boolean
   italic: boolean

@@ -1,4 +1,4 @@
-import { newContactInfo } from './factory'
+import { newContactInfo, newSupervisor } from './factory'
 import type {
   Check,
   ContactInfo,
@@ -82,7 +82,8 @@ export const api = {
     await request(`${resumePath(id)}/contact`, send('PUT', json))
   },
   async getSupervisors(id: string): Promise<SupervisorsDoc> {
-    return { supervisors: [], ...(await (await request(`${resumePath(id)}/supervisors`)).json()) }
+    const { supervisors = [], ...rest }: Partial<SupervisorsDoc> = await (await request(`${resumePath(id)}/supervisors`)).json()
+    return { ...rest, supervisors: supervisors.map((s) => ({ ...newSupervisor(s.entryId, s.job), ...s })) }
   },
   async saveSupervisors(id: string, json: string): Promise<void> {
     await request(`${resumePath(id)}/supervisors`, send('PUT', json))

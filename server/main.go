@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"sync"
+	"time"
 )
 
 const maxBody = 4 << 20
@@ -139,6 +140,7 @@ func (s *server) preview(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.Checks = append(resp.Checks, accessibilityChecks(doc, out.UAErrors, facts)...)
 	resp.Checks = append(resp.Checks, linkChecks(doc, facts)...)
+	resp.Checks = append(resp.Checks, dateChecks(doc, time.Now())...)
 	writeJSON(w, resp)
 }
 

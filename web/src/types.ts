@@ -57,11 +57,19 @@ export interface EntriesSection {
   items: EntryItem[]
 }
 
+/** A Lucide icon. `svg` is its markup, so the template draws it without an icon set. */
+export interface LineIcon {
+  name: string
+  svg: string
+}
+
 export interface Column {
   id: string
   hidden?: boolean
   title: string
   lines: string[]
+  /** The icon beside each line, by line index; null or missing for none. */
+  icons?: (LineIcon | null)[]
 }
 
 export interface ColumnsSection {
@@ -123,6 +131,8 @@ export interface Supervisor {
   position: string
   email: string
   phone: string
+  /** Whether the employer may contact this supervisor. */
+  canContact: boolean
 }
 
 /** supervisors.json */
@@ -131,7 +141,7 @@ export interface SupervisorsDoc {
 }
 
 export interface Check {
-  group: 'Parsers' | 'Screen readers' | 'Links'
+  group: 'Parsers' | 'Screen readers' | 'Links' | 'Dates'
   level: 'ok' | 'info' | 'warn' | 'error'
   title: string
   detail?: string

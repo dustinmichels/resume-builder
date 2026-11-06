@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { VueDraggable } from 'vue-draggable-plus'
 import { newColumn } from '../factory'
+import { moveIcon, setIcon, spliceIcons } from '../lineIcons'
 import type { Column } from '../types'
+import LineIconButton from './LineIconButton.vue'
 import StringList from './StringList.vue'
 import VisibilityToggle from './VisibilityToggle.vue'
 
@@ -28,7 +30,23 @@ function remove(index: number) {
           </button>
         </div>
         <div class="column-lines">
-          <StringList v-model="col.lines" :path="`${path}.${i}.lines`" add-label="Line" rich />
+          <StringList
+            v-model="col.lines"
+            :path="`${path}.${i}.lines`"
+            add-label="Line"
+            rich
+            sortable
+            @splice="(start, count, inserted) => spliceIcons(col, start, count, inserted)"
+            @move="(from, to) => moveIcon(col, from, to)"
+          >
+            <template #lead="{ index }">
+              <LineIconButton
+                :icon="col.icons?.[index]"
+                :data-path="`${path}.${i}.icons.${index}`"
+                @pick="(icon) => setIcon(col, index, icon)"
+              />
+            </template>
+          </StringList>
         </div>
       </div>
     </VueDraggable>

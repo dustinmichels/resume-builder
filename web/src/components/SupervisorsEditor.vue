@@ -81,6 +81,10 @@ function remove(supervisor: Supervisor) {
             <span class="field-label">{{ f.label }}</span>
             <input v-model="row.supervisor[f.key]" class="input" :type="f.type" />
           </label>
+          <label class="check">
+            <input v-model="row.supervisor.canContact" type="checkbox" />
+            Can contact
+          </label>
         </div>
       </li>
     </ul>
@@ -164,5 +168,13 @@ function remove(supervisor: Supervisor) {
   grid-template-columns: 1fr 1fr;
   gap: 8px 10px;
   padding: 6px 6px 8px 0;
+}
+
+.check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
 }
 </style>

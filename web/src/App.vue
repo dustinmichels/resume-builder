@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef } from 'vue'
+import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 import { api, download, type ExportFormat } from './api'
 import BasicsEditor from './components/BasicsEditor.vue'
 import ContactEditor from './components/ContactEditor.vue'
@@ -32,6 +32,13 @@ const actionError = shallowRef<string | null>(null)
 const prompt = shallowRef<PromptRequest | null>(null)
 const sidebar = useTemplateRef<HTMLElement>('sidebar')
 const revealing = provideReveal()
+const syncing = shallowRef(false)
+/** What the last sync did; cleared once the saved resume changes. */
+const synced = shallowRef<string | null>(null)
+watch(currentId, () => (synced.value = null))
+watch(status, (s) => {
+  if (s !== 'saved') synced.value = null
+})
 
 const STATUS_LABELS = {
   loading: 'Loading…',
@@ -146,6 +153,28 @@ async function revealResume() {
   }
 }
 
+/** Brings resume.md and resume.pdf (and each version's copies) up to date with the saved resume. */
+async function syncFiles() {
+  const id = currentId.value
+  if (!id) return
+  syncing.value = true
+  synced.value = null
+  actionError.value = null
+  try {
+    const { written, failed } = await library.syncFiles()
+    if (id !== currentId.value) return
+    if (failed.length) {
+      actionError.value = `Could not sync ${failed.map((f) => `${f.file} (${f.error})`).join('; ')}`
+    } else {
+      synced.value = written.length ? `Updated ${written.join(', ')}.` : 'All files up to date.'
+    }
+  } catch (e) {
+    actionError.value = `Sync failed: ${e instanceof Error ? e.message : e}`
+  } finally {
+    syncing.value = false
+  }
+}
+
 function promptCreate() {
   prompt.value = {
     title: 'New resume',
@@ -218,15 +247,27 @@ function promptSettings() {
         @rename="promptRename"
         @remove="promptDelete"
       />
-      <button
-        class="save-status"
-        :class="status"
-        type="button"
-        :title="saveError ?? 'Changes save automatically. Click to save now.'"
-        @click="save"
-      >
-        {{ STATUS_LABELS[status] }}
-      </button>
+      <div class="save-group">
+        <button
+          class="save-status"
+          :class="status"
+          type="button"
+          :title="saveError ?? 'Changes save automatically. Click to save now.'"
+          @click="save"
+        >
+          {{ STATUS_LABELS[status] }}
+        </button>
+        <button
+          class="sync-files"
+          :class="{ synced }"
+          type="button"
+          :title="synced ?? 'Save, then write resume.md and resume.pdf (and each version\'s copies) beside resume.json.'"
+          :disabled="!currentId || syncing"
+          @click="syncFiles"
+        >
+          {{ syncing ? 'Syncing…' : synced ? 'Files synced' : 'Sync files' }}
+        </button>
+      </div>
       <div class="history">
         <button class="icon-btn" type="button" :title="`Undo (${UNDO_KEYS})`" aria-label="Undo" :disabled="!canUndo" @click="undo">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -321,7 +362,6 @@ function promptSettings() {
               :save-version="library.saveVersion"
               :restore-version="library.restoreVersion"
               :copy-version="library.copyVersion"
-              :sync-files="library.syncFiles"
             />
           </section>
         </div>
@@ -393,7 +433,13 @@ function promptSettings() {
   cursor: default;
 }
 
-.save-status {
+.save-group {
+  display: flex;
+  gap: 4px;
+}
+
+.save-status,
+.sync-files {
   padding: 2px 8px;
   border: 0;
   border-radius: 10px;
@@ -403,7 +449,12 @@ function promptSettings() {
   cursor: pointer;
 }
 
-.save-status.saved {
+.sync-files:disabled {
+  cursor: default;
+}
+
+.save-status.saved,
+.sync-files.synced {
   color: var(--ok);
 }
 

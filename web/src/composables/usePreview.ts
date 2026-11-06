@@ -22,9 +22,11 @@ export function usePreview(doc: Readonly<Ref<ResumeDoc | null>>) {
     () => (doc.value ? JSON.stringify(doc.value) : null),
     (json, _old, onCleanup) => {
       if (!json) return
+      // Pending from the edit itself, not after the debounce, so the preview
+      // reacts the moment something changes.
+      pending.value = true
       const controller = new AbortController()
       const timer = setTimeout(async () => {
-        pending.value = true
         try {
           const result = await api.preview(json, controller.signal)
           setPages(result.pages)

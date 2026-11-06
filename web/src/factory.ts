@@ -50,6 +50,7 @@ export const newSupervisor = (entryId: string, job: string): Supervisor => ({
   position: '',
   email: '',
   phone: '',
+  canContact: false,
 })
 
 /** Deep copy with fresh ids, for "Duplicate". */

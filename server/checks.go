@@ -76,7 +76,7 @@ type Style struct {
 }
 
 type Check struct {
-	Group  string `json:"group"` // groupParsers | groupScreenReaders | groupLinks
+	Group  string `json:"group"` // groupParsers | groupScreenReaders | groupLinks | groupDates
 	Level  string `json:"level"` // ok | info | warn | error
 	Title  string `json:"title"`
 	Detail string `json:"detail,omitempty"`
@@ -86,6 +86,7 @@ const (
 	groupParsers       = "Parsers"
 	groupScreenReaders = "Screen readers"
 	groupLinks         = "Links"
+	groupDates         = "Dates"
 )
 
 // checkList collects one group's checks.

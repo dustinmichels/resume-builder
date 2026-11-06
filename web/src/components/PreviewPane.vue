@@ -53,6 +53,7 @@ const GROUPS: Record<Check['group'], string> = {
   Parsers: 'What applicant tracking systems get from the text layer.',
   'Screen readers': 'What assistive technology gets from the PDF’s tags.',
   Links: 'Whether links open, from the PDF and on the web.',
+  Dates: 'Whether entries run newest first and their dates add up.',
 }
 
 // Grouped by audience, each group by severity.
@@ -268,83 +269,88 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
       <pre>{{ preview.warnings.join('\n') }}</pre>
     </div>
 
-    <div ref="scrollEl" class="scroll" :class="{ dim: pending }">
-      <div v-if="!preview && !error" class="empty">Rendering the first preview…</div>
+    <div class="stage">
+      <div v-if="pending" class="spinner" aria-hidden="true"></div>
+      <div ref="scrollEl" class="scroll" :class="{ dim: pending }">
+        <div v-if="!preview && !error" class="empty">Rendering the first preview…</div>
 
-      <div v-else-if="tab === 'page'" ref="pagesEl" class="pages">
-        <div v-for="(url, i) in pageUrls" :key="i" class="page">
-          <img :src="url" class="page-img" :alt="`Resume page ${i + 1}`" />
-          <template v-if="doc">
-            <div
-              v-for="(field, j) in fieldsByPage.get(i + 1)"
-              :key="j"
-              class="hit"
-              :class="{ active: field.path === activePath }"
-              :style="boxStyle(field)"
-              :title="describe(doc, field.path)"
-              @mousedown.prevent
-              @click="open(field.path)"
+        <div v-else-if="tab === 'page'" ref="pagesEl" class="pages">
+          <div v-for="(url, i) in pageUrls" :key="i" class="page">
+            <img :src="url" class="page-img" :alt="`Resume page ${i + 1}`" />
+            <template v-if="doc">
+              <div
+                v-for="(field, j) in fieldsByPage.get(i + 1)"
+                :key="j"
+                class="hit"
+                :class="{ active: field.path === activePath }"
+                :style="boxStyle(field)"
+                :title="describe(doc, field.path)"
+                @mousedown.prevent
+                @click="open(field.path)"
+              />
+            </template>
+          </div>
+          <div v-if="doc && activePath" ref="cardEl" class="card" :class="{ placed: cardPos }" :style="cardStyle">
+            <FieldEditor
+              ref="editor"
+              :key="editorKey"
+              :doc="doc"
+              :path="activePath"
+              @close="close"
+              @navigate="navigate"
+              @tab="step"
             />
+          </div>
+        </div>
+
+        <div v-else-if="tab === 'text'" class="text-view">
+          <div class="text-head">
+            <p class="explain">
+              The PDF’s text layer, extracted with <code>pdftotext</code>. This is what applicant tracking systems and
+              other parsers start from.
+            </p>
+            <div class="seg" role="radiogroup" aria-label="Extraction mode">
+              <button role="radio" :aria-checked="textMode === 'raw'" @click="textMode = 'raw'">Reading order</button>
+              <button role="radio" :aria-checked="textMode === 'layout'" @click="textMode = 'layout'">Layout</button>
+            </div>
+          </div>
+          <template v-for="(page, i) in textPages" :key="i">
+            <div class="page-break">Page {{ i + 1 }}</div>
+            <pre class="text" :class="textMode">{{ page }}</pre>
           </template>
         </div>
-        <div v-if="doc && activePath" ref="cardEl" class="card" :class="{ placed: cardPos }" :style="cardStyle">
-          <FieldEditor
-            ref="editor"
-            :key="editorKey"
-            :doc="doc"
-            :path="activePath"
-            @close="close"
-            @navigate="navigate"
-            @tab="step"
-          />
-        </div>
-      </div>
 
-      <div v-else-if="tab === 'text'" class="text-view">
-        <div class="text-head">
-          <p class="explain">
-            The PDF’s text layer, extracted with <code>pdftotext</code>. This is what applicant tracking systems and
-            other parsers start from.
-          </p>
-          <div class="seg" role="radiogroup" aria-label="Extraction mode">
-            <button role="radio" :aria-checked="textMode === 'raw'" @click="textMode = 'raw'">Reading order</button>
-            <button role="radio" :aria-checked="textMode === 'layout'" @click="textMode = 'layout'">Layout</button>
+        <div v-else-if="tab === 'markdown'" class="text-view">
+          <div class="text-head">
+            <p class="explain">The Markdown download, as a Markdown viewer shows it.</p>
+            <div class="seg" role="radiogroup" aria-label="Markdown view">
+              <button role="radio" :aria-checked="markdownMode === 'rendered'" @click="markdownMode = 'rendered'">
+                Rendered
+              </button>
+              <button role="radio" :aria-checked="markdownMode === 'source'" @click="markdownMode = 'source'">
+                Source
+              </button>
+            </div>
           </div>
+          <article v-if="markdownMode === 'rendered'" class="markdown" v-html="markdownHtml" />
+          <pre v-else class="text raw">{{ preview?.markdown }}</pre>
         </div>
-        <template v-for="(page, i) in textPages" :key="i">
-          <div class="page-break">Page {{ i + 1 }}</div>
-          <pre class="text" :class="textMode">{{ page }}</pre>
-        </template>
-      </div>
 
-      <div v-else-if="tab === 'markdown'" class="text-view">
-        <div class="text-head">
-          <p class="explain">The Markdown download, as a Markdown viewer shows it.</p>
-          <div class="seg" role="radiogroup" aria-label="Markdown view">
-            <button role="radio" :aria-checked="markdownMode === 'rendered'" @click="markdownMode = 'rendered'">
-              Rendered
-            </button>
-            <button role="radio" :aria-checked="markdownMode === 'source'" @click="markdownMode = 'source'">Source</button>
-          </div>
+        <div v-else class="checks">
+          <section v-for="group in checkGroups" :key="group.name" class="check-group">
+            <h3 class="group-title">{{ group.name }}</h3>
+            <p class="explain">{{ group.about }}</p>
+            <ul class="check-list">
+              <li v-for="check in group.checks" :key="check.title" class="check" :class="check.level">
+                <span class="check-icon" aria-hidden="true">{{ ICONS[check.level] }}</span>
+                <div>
+                  <div class="check-title">{{ check.title }}</div>
+                  <pre v-if="check.detail" class="check-detail">{{ check.detail }}</pre>
+                </div>
+              </li>
+            </ul>
+          </section>
         </div>
-        <article v-if="markdownMode === 'rendered'" class="markdown" v-html="markdownHtml" />
-        <pre v-else class="text raw">{{ preview?.markdown }}</pre>
-      </div>
-
-      <div v-else class="checks">
-        <section v-for="group in checkGroups" :key="group.name" class="check-group">
-          <h3 class="group-title">{{ group.name }}</h3>
-          <p class="explain">{{ group.about }}</p>
-          <ul class="check-list">
-            <li v-for="check in group.checks" :key="check.title" class="check" :class="check.level">
-              <span class="check-icon" aria-hidden="true">{{ ICONS[check.level] }}</span>
-              <div>
-                <div class="check-title">{{ check.title }}</div>
-                <pre v-if="check.detail" class="check-detail">{{ check.detail }}</pre>
-              </div>
-            </li>
-          </ul>
-        </section>
       </div>
     </div>
   </div>
@@ -446,6 +452,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   font-size: 12px;
 }
 
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .scroll {
   flex: 1;
   min-height: 0;
@@ -453,13 +467,43 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   padding: 24px;
 }
 
-/* Dim the content while rendering, but never the field editor. */
+/* Grey the content out while rendering, but never the field editor. */
 .scroll :is(.empty, .page-img, .text-view, .checks) {
-  transition: opacity 0.2s;
+  transition:
+    opacity 0.15s,
+    filter 0.15s;
 }
 
 .scroll.dim :is(.empty, .page-img, .text-view, .checks) {
-  opacity: 0.85;
+  opacity: 0.6;
+  filter: grayscale(0.6);
+}
+
+/* Stays centered over the visible area however far the preview is scrolled. */
+.spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border: 4px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  background: var(--panel);
+  /* A panel-colored halo keeps the ring readable over page text. */
+  box-shadow:
+    0 0 0 8px var(--panel),
+    0 2px 14px 8px rgb(0 0 0 / 0.12);
+  pointer-events: none;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .empty {

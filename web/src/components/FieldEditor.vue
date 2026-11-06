@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { ImagePlus } from '@lucide/vue'
 import { computed, onMounted, useTemplateRef } from 'vue'
-import { describe, getContact, getString, isRich, listOf, setString } from '../fieldPath'
-import type { ResumeDoc } from '../types'
+import { describe, getContact, getString, iconSlotOf, isRich, listOf, setString } from '../fieldPath'
+import { setIcon, spliceIcons } from '../lineIcons'
+import type { LineIcon, ResumeDoc } from '../types'
+import IconPicker from './IconPicker.vue'
 import RichText from './RichText.vue'
 
 // Edits one value of the document in place. The parent keys this component by
@@ -14,15 +17,23 @@ const contact = computed(() => getContact(doc, path))
 const rich = computed(() => isRich(path))
 const list = computed(() => listOf(doc, path))
 const value = computed(() => getString(doc, path) ?? '')
+const iconSlot = computed(() => iconSlotOf(doc, path))
+/** For a column line: the path of the icon beside it. */
+const iconPath = computed(() =>
+  list.value?.column ? `${list.value.base.replace(/lines$/, 'icons')}.${list.value.index}` : null,
+)
 
 const richEl = useTemplateRef<InstanceType<typeof RichText>>('richEl')
 const inputEl = useTemplateRef<HTMLInputElement>('inputEl')
+const pickerEl = useTemplateRef<InstanceType<typeof IconPicker>>('pickerEl')
 
 function focus() {
   const input = inputEl.value
   if (input) {
     input.focus({ preventScroll: true })
     input.setSelectionRange(input.value.length, input.value.length)
+  } else if (pickerEl.value) {
+    pickerEl.value.focus()
   } else {
     richEl.value?.focus(true, true)
   }
@@ -34,11 +45,18 @@ function set(text: string) {
   setString(doc, path, text)
 }
 
+function pickIcon(icon: LineIcon | null) {
+  const slot = iconSlot.value
+  if (slot) setIcon(slot.column, slot.index, icon)
+  emit('close')
+}
+
 /** Enter adds an item below in lists and closes the editor for single values. */
 function onEnter() {
   const l = list.value
   if (!l) return emit('close')
   l.array.splice(l.index + 1, 0, '')
+  if (l.column) spliceIcons(l.column, l.index + 1, 0, 1)
   emit('navigate', `${l.base}.${l.index + 1}`)
 }
 
@@ -46,6 +64,7 @@ function removeItem() {
   const l = list.value
   if (!l) return
   l.array.splice(l.index, 1)
+  if (l.column) spliceIcons(l.column, l.index, 1)
   if (l.index > 0) emit('navigate', `${l.base}.${l.index - 1}`)
   else if (l.array.length) emit('navigate', `${l.base}.0`)
   else emit('close')
@@ -81,10 +100,24 @@ function onKeydown(e: KeyboardEvent) {
   <div class="field-editor" role="dialog" :aria-label="`Edit ${label}`" @keydown="onKeydown">
     <div class="fe-head">
       <span class="fe-label">{{ label }}</span>
-      <button class="icon-btn" type="button" title="Close (Esc)" aria-label="Close" @click="emit('close')">×</button>
+      <span class="fe-tools">
+        <button
+          v-if="iconPath"
+          class="icon-btn"
+          type="button"
+          title="Icon"
+          aria-label="Choose an icon"
+          @click="emit('navigate', iconPath)"
+        >
+          <ImagePlus :size="15" aria-hidden="true" />
+        </button>
+        <button class="icon-btn" type="button" title="Close (Esc)" aria-label="Close" @click="emit('close')">×</button>
+      </span>
     </div>
 
-    <div v-if="contact" class="fe-contact">
+    <IconPicker v-if="iconSlot" ref="pickerEl" :current="iconSlot.column.icons?.[iconSlot.index]" @pick="pickIcon" />
+
+    <div v-else-if="contact" class="fe-contact">
       <input
         ref="inputEl"
         v-model="contact.text"
@@ -159,6 +192,11 @@ function onKeydown(e: KeyboardEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fe-tools {
+  display: flex;
+  align-items: center;
 }
 
 .fe-contact {

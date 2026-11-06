@@ -57,13 +57,14 @@ resume as a version labelled `Before restoring …`, so a restore can always be 
 folder, versions included, into `.trash`; empty that folder by hand when you no longer need them. The folder button in
 the toolbar opens the current resume's folder in Finder (Explorer on Windows, the default file manager elsewhere).
 
-**Sync files** (Versions tab) writes a Markdown and a PDF copy beside `resume.json` and each version, named after
-the JSON file. It saves pending edits first and skips copies already up to date: a Markdown file is rewritten when its
-content changes, a PDF when it is older than its JSON or the template. A file that fails to render is reported and
-the rest still sync. Deleting a version deletes its copies.
+**Sync files** (next to the save status in the toolbar) writes a Markdown and a PDF copy beside `resume.json` and each
+version, named after the JSON file. It saves pending edits first and skips copies already up to date: a Markdown file
+is rewritten when its content changes, a PDF when it is older than its JSON or the template. A file that fails to
+render is reported and the rest still sync. Deleting a version deletes its copies. The button reads **Files synced**
+until the resume next changes.
 
 `additional/contact.json` and `additional/supervisors.json` hold details for job applications that don't belong on the page: your name,
-email, phone and mailing address, and for each entry a supervisor's name, position, email and phone. They are
+email, phone and mailing address, and for each entry a supervisor's name, position, email, phone and whether they may be contacted. They are
 written only once you fill something in, autosave with the resume, and are never rendered or exported. They move,
 duplicate and go to `.trash` with their resume, but versions don't include them: restoring a version leaves them as
 they are, and a copy of a version gets the current ones. Supervisors are matched to entries by the entry's `id`; each
@@ -93,7 +94,7 @@ come from the resume:
 | Keywords | lines of table-style columns sections (the skills grid), split at `,` `;` `(` `)`, markup removed |
 
 The **What machines read** tab shows the extracted text (reading order and layout). The **Checks** tab groups its
-findings by reader:
+findings by reader, plus the dates:
 
 - **Parsers** (the `pdftotext` text layer): typed dot leaders, symbol characters (❖ ● emoji), entry titles split
   from their dates, dates without a year, and any content missing from the text layer.
@@ -104,6 +105,9 @@ findings by reader:
   target, links not clickable in the PDF (markup in a field the template prints as plain text), and web links
   that don't open. The server requests each web link at most once every 10 minutes, separately from rendering;
   sites that refuse automated requests (LinkedIn's 999) show as unconfirmed, not broken.
+- **Dates**: date ranges that end before they start, and entries not listed newest first (by end date, "Present"
+  being this month, then start date). Dates are read as month names, 4-digit years and "Present"; a label item
+  (like "Non-degree education:") starts a new list within its section.
 
 ## Downloads
 
@@ -144,3 +148,9 @@ Select text and press ⌘B, ⌘I or ⌘K (link) to format it; Shift+Enter adds a
 `**bold**`, `*italic*`, `***bold italic***` and `[label](https://link)` in paragraphs, subtitles, bullets,
 subheadings and column lines; other fields are plain text. Content is rendered as literal text, so characters like
 `#`, `$` and `@` are safe. The schema lives in `web/src/types.ts`.
+
+Column lines can carry an icon, hung in the margin to the left of the line. Click the image button beside a line in
+the sidebar, an icon on the page, or the image button on a line's page editor, then search Lucide's icon set (Enter
+picks the first match). The icon's SVG is stored with the column (`icons`, parallel to `lines`), so the template
+needs no icon set. Icons are drawn as decorations: left out of the text layer, the screen-reader tags, the Word and
+Markdown exports and the attached JSON.
