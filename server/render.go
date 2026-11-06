@@ -20,6 +20,7 @@ type rendered struct {
 	PDFPath  string
 	SVGs     []string
 	Warnings []string
+	Fields   []FieldBox // set with the SVGs
 }
 
 func (r *rendered) Close() { os.RemoveAll(r.dir) }
@@ -38,7 +39,8 @@ func checkTools() error {
 	return nil
 }
 
-// render compiles the resume to PDF and, when svg is set, to one SVG per page.
+// render compiles the resume to PDF and, when svg is set, to one SVG per page
+// plus the map of where each editable value sits on those pages.
 // The template is re-read on every call so template edits show up live.
 func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*rendered, error) {
 	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
@@ -48,7 +50,7 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 	if err != nil {
 		return nil, err
 	}
-	content, err := contentOnly(raw)
+	content, err := attachedJSON(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -65,20 +67,37 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 	}
 
 	svgErr := make(chan error, 1)
+	type fieldsResult struct {
+		marks []fieldMark
+		err   error
+	}
+	fields := make(chan fieldsResult, 1)
 	if svg {
 		go func() {
 			_, err := typst(ctx, dir, "page-{0p}.svg")
 			svgErr <- err
 		}()
+		go func() {
+			marks, err := queryFields(ctx, dir)
+			fields <- fieldsResult{marks, err}
+		}()
 	} else {
 		svgErr <- nil
+		fields <- fieldsResult{}
 	}
 	stderr, pdfErr := typst(ctx, dir, "resume.pdf")
+	f := <-fields
 	if err := errors.Join(pdfErr, <-svgErr); err != nil {
 		out.Close()
 		return nil, err
 	}
 	out.Warnings = diagnostics(stderr)
+	// The field map only powers click-to-edit; a failure there shouldn't hide
+	// an otherwise good render.
+	if f.err != nil {
+		out.Warnings = append(out.Warnings, "click-to-edit map unavailable: "+f.err.Error())
+	}
+	out.Fields = fieldBoxes(f.marks)
 
 	if svg {
 		paths, err := filepath.Glob(filepath.Join(dir, "page-*.svg")) // sorted; {0p} zero-pads
@@ -128,15 +147,67 @@ func diagnostics(stderr string) []string {
 	return lines
 }
 
-// contentOnly drops the style block, leaving the content that gets attached
-// to the PDF as resume.json.
-func contentOnly(raw []byte) ([]byte, error) {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
+// attachedJSON is the resume.json attached to the PDF: the content as it reads
+// on the page, without editor-only fields (ids, style, layout flags) or blank
+// values the template skips.
+func attachedJSON(raw []byte) ([]byte, error) {
+	var doc Doc
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, err
 	}
-	delete(m, "style")
-	return json.MarshalIndent(m, "", "  ")
+	type contact struct {
+		Text string `json:"text"`
+		URL  string `json:"url,omitempty"`
+	}
+	type item struct {
+		Type     string   `json:"type"`
+		Title    string   `json:"title,omitempty"`
+		Date     string   `json:"date,omitempty"`
+		Subtitle string   `json:"subtitle,omitempty"`
+		Location string   `json:"location,omitempty"`
+		Text     string   `json:"text,omitempty"`
+		Bullets  []string `json:"bullets,omitempty"`
+	}
+	type column struct {
+		Title string   `json:"title,omitempty"`
+		Lines []string `json:"lines,omitempty"`
+	}
+	type section struct {
+		Kind       string   `json:"kind"`
+		Title      string   `json:"title,omitempty"`
+		Paragraphs []string `json:"paragraphs,omitempty"`
+		Items      []item   `json:"items,omitempty"`
+		Columns    []column `json:"columns,omitempty"`
+	}
+	type basics struct {
+		Name     string    `json:"name"`
+		Headline []string  `json:"headline,omitempty"`
+		Contacts []contact `json:"contacts,omitempty"`
+	}
+	var out struct {
+		Basics   *basics   `json:"basics,omitempty"`
+		Sections []section `json:"sections"`
+	}
+	if bs := doc.Basics; bs != nil {
+		out.Basics = &basics{Name: bs.Name, Headline: nonEmpty(bs.Headline)}
+		for _, c := range bs.Contacts {
+			if c.Text != "" {
+				out.Basics.Contacts = append(out.Basics.Contacts, contact{c.Text, c.URL})
+			}
+		}
+	}
+	out.Sections = []section{}
+	for _, s := range doc.Sections {
+		sec := section{Kind: s.Kind, Title: s.Title, Paragraphs: nonEmpty(s.Paragraphs)}
+		for _, it := range s.Items {
+			sec.Items = append(sec.Items, item{it.Type, it.Title, it.Date, it.Subtitle, it.Location, it.Text, nonEmpty(it.Bullets)})
+		}
+		for _, c := range s.Columns {
+			sec.Columns = append(sec.Columns, column{c.Title, nonEmpty(c.Lines)})
+		}
+		out.Sections = append(out.Sections, sec)
+	}
+	return json.MarshalIndent(out, "", "  ")
 }
 
 // extractText returns the PDF's text layer in content order (-raw, close to

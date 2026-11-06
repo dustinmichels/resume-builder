@@ -1,6 +1,12 @@
+[tools]
+air = "1.67.4"
+bun = "1.4.4"
+go = "1.27.3"
+typst = "0.15.1"
+
 [tasks.api]
-description = "Go API server (http://127.0.0.1:8787)"
-run = "go run ./server"
+description = "Go API server with live reload via air (http://127.0.0.1:8787)"
+run = "air"
 
 [tasks.web]
 description = "Vite dev server (http://localhost:5180)"
@@ -9,7 +15,18 @@ run = "bun install && bun run dev"
 
 [tasks.dev]
 description = "Run the API and web dev servers together"
-depends = ["api", "web"]
+depends = ["api", "web-after-api"]
+
+[tasks.wait-api]
+description = "Block until the API answers on 127.0.0.1:8787"
+hide = true
+run = "until curl -s -o /dev/null http://127.0.0.1:8787/api/settings; do sleep 0.3; done"
+
+[tasks.web-after-api]
+description = "Start the web dev server once air's first build is serving"
+hide = true
+depends = ["wait-api"]
+run = [{ task = "web" }]
 
 [tasks.build]
 description = "Build the frontend into web/dist"

@@ -20,7 +20,7 @@ function removeContact(index: number) {
 
     <div class="field">
       <span class="field-label">Headline (joined with //)</span>
-      <StringList v-model="basics.headline" :multiline="false" add-label="Headline part" />
+      <StringList v-model="basics.headline" add-label="Headline part" />
     </div>
 
     <div class="field">

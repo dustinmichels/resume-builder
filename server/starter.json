@@ -1,0 +1,54 @@
+{
+  "basics": {
+    "name": "Your Name",
+    "headline": [
+      "What you do"
+    ],
+    "contacts": [
+      {
+        "id": "c-5a1e0c3b",
+        "text": "you@example.com",
+        "url": "mailto:you@example.com"
+      }
+    ]
+  },
+  "sections": [
+    {
+      "id": "s-0f3c9a21",
+      "kind": "text",
+      "title": "Profile",
+      "paragraphs": [
+        "A sentence or two about your work and what you are looking for. Use **bold**, *italic* and [links](https://example.com) where they help."
+      ]
+    },
+    {
+      "id": "s-7d24b6e8",
+      "kind": "entries",
+      "title": "Experience",
+      "uppercaseTitles": false,
+      "items": [
+        {
+          "id": "e-3b8f61d0",
+          "type": "entry",
+          "title": "Job Title",
+          "date": "2024 – Present",
+          "subtitle": "*Company Name*",
+          "location": "City, State",
+          "bullets": [
+            "What you did and the result it had.",
+            "Another accomplishment, with numbers if you have them."
+          ]
+        }
+      ]
+    }
+  ],
+  "style": {
+    "accent": "#7a1a4a",
+    "font": "Helvetica",
+    "fontSize": 9.5,
+    "margin": 0.6,
+    "leader": "dotted",
+    "bullet": "diamonds",
+    "paragraphMarker": "chevron"
+  }
+}

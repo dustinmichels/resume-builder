@@ -25,7 +25,7 @@ function remove(index: number) {
           </button>
         </div>
         <div class="column-lines">
-          <StringList v-model="col.lines" add-label="Line" />
+          <StringList v-model="col.lines" add-label="Line" rich />
         </div>
       </div>
     </VueDraggable>

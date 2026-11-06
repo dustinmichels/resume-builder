@@ -1,7 +1,8 @@
-// Resume document schema. Mirrored by template/resume.typ (rendering) and
-// server/checks.go (machine-readability checks).
+// Resume document schema. Mirrored by template/resume.typ (rendering),
+// server/checks.go (machine-readability checks) and server/docx.go +
+// server/markdown.go (Word and Markdown exports).
 //
-// Inline text fields accept **bold**, *italic* and [label](url).
+// Inline text fields accept **bold**, *italic*, ***bold italic*** and [label](url).
 
 export interface Contact {
   id: string
@@ -95,4 +96,44 @@ export interface Preview {
   layoutText: string
   checks: Check[]
   warnings: string[]
+  /** The Markdown export of the same document. */
+  markdown: string
+  /** Where each editable value sits on the rendered pages. */
+  fields: FieldBox[]
+}
+
+/**
+ * One editable value on a rendered page. `path` addresses the value in the
+ * document, dot-separated with array indexes ("sections.2.items.0.bullets.3",
+ * "basics.contacts.1"). Geometry is in points from the page's top-left
+ * corner; pages are US Letter (612 × 792 pt) and numbered from 1.
+ */
+export interface FieldBox {
+  path: string
+  page: number
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Where resumes are stored. An empty dataDir means none has been chosen yet. */
+export interface Settings {
+  dataDir: string
+  defaultDataDir: string
+}
+
+/** A saved resume; `id` is its folder name and display name. */
+export interface ResumeSummary {
+  id: string
+  /** RFC 3339 */
+  modified: string
+}
+
+/** A named snapshot of a resume. */
+export interface Version {
+  id: string
+  label: string
+  /** RFC 3339 */
+  created: string
 }

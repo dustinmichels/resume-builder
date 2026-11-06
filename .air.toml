@@ -1,0 +1,15 @@
+# Live reload for the Go API (`mise run dev`). The Typst template is re-read
+# on every render, so only server code needs a rebuild.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/server ./server"
+  entrypoint = ["./tmp/server"]
+  include_dir = ["server"]
+  include_ext = ["go"]
+  exclude_regex = ["_test\\.go$"]
+  delay = 200
+
+[misc]
+  clean_on_exit = true

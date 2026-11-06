@@ -16,13 +16,15 @@ type Doc struct {
 		Headline []string `json:"headline"`
 		Contacts []struct {
 			Text string `json:"text"`
+			URL  string `json:"url"`
 		} `json:"contacts"`
 	} `json:"basics"`
 	Sections []struct {
-		Kind       string   `json:"kind"`
-		Title      string   `json:"title"`
-		Paragraphs []string `json:"paragraphs"`
-		Items      []struct {
+		Kind            string   `json:"kind"`
+		Title           string   `json:"title"`
+		Paragraphs      []string `json:"paragraphs"`
+		UppercaseTitles bool     `json:"uppercaseTitles"`
+		Items           []struct {
 			Type     string   `json:"type"`
 			Title    string   `json:"title"`
 			Date     string   `json:"date"`
@@ -31,12 +33,24 @@ type Doc struct {
 			Text     string   `json:"text"`
 			Bullets  []string `json:"bullets"`
 		} `json:"items"`
+		Variant string `json:"variant"`
 		Columns []struct {
 			Title string   `json:"title"`
 			Lines []string `json:"lines"`
 		} `json:"columns"`
 	} `json:"sections"`
-	Style map[string]any `json:"style"`
+	Style *Style `json:"style"`
+}
+
+// Style is the page style; the Typst template and the Word export read it.
+type Style struct {
+	Accent          string  `json:"accent"`
+	Font            string  `json:"font"`
+	FontSize        float64 `json:"fontSize"`
+	Margin          float64 `json:"margin"`
+	Leader          string  `json:"leader"`
+	Bullet          string  `json:"bullet"`
+	ParagraphMarker string  `json:"paragraphMarker"`
 }
 
 type Check struct {

@@ -3,6 +3,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { cloneEntry, newEntry, newLabel } from '../factory'
 import type { Entry, EntryItem } from '../types'
 import EntryCard from './EntryCard.vue'
+import RichText from './RichText.vue'
 
 const items = defineModel<EntryItem[]>({ required: true })
 
@@ -31,7 +32,7 @@ function duplicate(index: number) {
         />
         <div v-else class="label-row">
           <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
-          <input v-model="item.text" class="input label-input" placeholder="Subheading, e.g. Non-degree education:" />
+          <RichText v-model="item.text" placeholder="Subheading, e.g. Non-degree education:" aria-label="Subheading" />
           <button class="icon-btn danger" type="button" title="Delete subheading" @click="remove(i)">×</button>
         </div>
       </template>
@@ -54,11 +55,6 @@ function duplicate(index: number) {
   align-items: center;
   gap: 4px;
   padding-left: 8px;
-}
-
-.label-input {
-  font-style: italic;
-  font-weight: 600;
 }
 
 .adds {

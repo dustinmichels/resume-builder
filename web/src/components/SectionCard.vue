@@ -64,7 +64,7 @@ const count = computed(() => {
         </label>
       </div>
 
-      <StringList v-if="section.kind === 'text'" v-model="section.paragraphs" add-label="Paragraph" />
+      <StringList v-if="section.kind === 'text'" v-model="section.paragraphs" add-label="Paragraph" rich />
       <EntriesEditor v-else-if="section.kind === 'entries'" v-model="section.items" />
       <ColumnsEditor v-else v-model="section.columns" />
     </div>

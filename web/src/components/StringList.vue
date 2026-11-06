@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { nextTick, useTemplateRef } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
+import RichText from './RichText.vue'
 
 const items = defineModel<string[]>({ required: true })
 const {
   addLabel = 'Add',
-  multiline = true,
+  rich = false,
   placeholder = '',
-} = defineProps<{ addLabel?: string; multiline?: boolean; placeholder?: string }>()
+} = defineProps<{ addLabel?: string; rich?: boolean; placeholder?: string }>()
 
 const rows = useTemplateRef<HTMLElement>('rows')
+// Rich rows by index, for moving the caret between them.
+const editors: (InstanceType<typeof RichText> | null)[] = []
 
 async function add() {
   items.value.push('')
@@ -20,6 +23,20 @@ async function add() {
 function remove(index: number) {
   items.value.splice(index, 1)
 }
+
+async function insertAfter(index: number) {
+  items.value.splice(index + 1, 0, '')
+  await nextTick()
+  editors[index + 1]?.focus()
+}
+
+async function removeEmpty(index: number) {
+  if (items.value.length === 1) return
+  items.value.splice(index, 1)
+  await nextTick()
+  if (index > 0) editors[index - 1]?.focus()
+  else editors[0]?.focus(false)
+}
 </script>
 
 <template>
@@ -27,10 +44,17 @@ function remove(index: number) {
     <div ref="rows">
       <VueDraggable v-model="items" handle=".h-row" :animation="150" class="rows">
         <!-- Strings have no identity of their own; index keys are fine because each
-             row is only an input bound to items[i]. -->
+             row is only an editor bound to items[i]. -->
         <div v-for="(_, i) in items" :key="i" class="row">
           <span class="handle h-row" title="Drag to reorder" aria-hidden="true">⠿</span>
-          <textarea v-if="multiline" v-model="items[i]" class="input" rows="1" :placeholder="placeholder" />
+          <RichText
+            v-if="rich"
+            :ref="(c) => (editors[i] = c as InstanceType<typeof RichText> | null)"
+            v-model="items[i]"
+            :placeholder="placeholder"
+            @enter="insertAfter(i)"
+            @backspace-empty="removeEmpty(i)"
+          />
           <input v-else v-model="items[i]" class="input" :placeholder="placeholder" />
           <button class="icon-btn danger" type="button" title="Remove" :aria-label="`Remove item ${i + 1}`" @click="remove(i)">
             ×

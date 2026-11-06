@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Style } from '../types'
 
 const style = defineModel<Style>({ required: true })
 
-// Fonts installed on macOS by default. Any installed font name works;
-// unknown names show up as a Typst warning in the preview.
+// Fonts installed on macOS by default, so Typst can always find them.
 const FONTS = ['Helvetica', 'Helvetica Neue', 'Arial', 'Avenir Next', 'Gill Sans', 'Optima', 'Georgia', 'Palatino', 'Baskerville', 'Charter']
+
+// A resume saved with a font outside the list keeps it as an option, so the
+// dropdown shows the font actually in use instead of a blank.
+const fontOptions = computed(() => (FONTS.includes(style.value.font) ? FONTS : [style.value.font, ...FONTS]))
 </script>
 
 <template>
@@ -20,10 +24,9 @@ const FONTS = ['Helvetica', 'Helvetica Neue', 'Arial', 'Avenir Next', 'Gill Sans
 
     <label class="field">
       <span class="field-label">Font</span>
-      <input v-model="style.font" class="input" list="font-options" />
-      <datalist id="font-options">
-        <option v-for="f in FONTS" :key="f" :value="f" />
-      </datalist>
+      <select v-model="style.font" class="input">
+        <option v-for="f in fontOptions" :key="f" :value="f">{{ f }}</option>
+      </select>
     </label>
 
     <label class="field">

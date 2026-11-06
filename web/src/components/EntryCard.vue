@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
 import type { Entry } from '../types'
+import RichText from './RichText.vue'
 import StringList from './StringList.vue'
 
 const entry = defineModel<Entry>({ required: true })
@@ -31,17 +32,17 @@ const heading = computed(() => entry.value.title || 'Untitled entry')
         <span class="field-label">Dates</span>
         <input v-model="entry.date" class="input" placeholder="JAN 2021 – PRESENT" />
       </label>
-      <label class="field">
+      <div class="field">
         <span class="field-label">Subtitle</span>
-        <input v-model="entry.subtitle" class="input" placeholder="Organization or degree" />
-      </label>
+        <RichText v-model="entry.subtitle" placeholder="Organization or degree" aria-label="Subtitle" />
+      </div>
       <label class="field">
         <span class="field-label">Location</span>
         <input v-model="entry.location" class="input" placeholder="City, ST" />
       </label>
       <div class="field bullets">
         <span class="field-label">Bullets</span>
-        <StringList v-model="entry.bullets" add-label="Bullet" />
+        <StringList v-model="entry.bullets" add-label="Bullet" rich />
       </div>
     </div>
   </div>

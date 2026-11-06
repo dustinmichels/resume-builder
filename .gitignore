@@ -1,3 +1,6 @@
+.codegraph/
+
 samples/
 data/
 .DS_Store
+tmp/
