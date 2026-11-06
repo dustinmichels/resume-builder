@@ -1,6 +1,7 @@
 import { onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
 import { api } from '../api'
-import type { ResumeDoc } from '../types'
+import { jobLabel } from '../format'
+import type { ContactInfo, ResumeDoc, SupervisorsDoc } from '../types'
 
 export type SaveStatus = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error'
 
@@ -9,37 +10,57 @@ const AUTOSAVE_MS = 800
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
- * Loads the resume `id` from the server and autosaves every change to it.
+ * Loads the resume `id` and its side documents (contact info, supervisors)
+ * from the server and autosaves every change to them.
  * Changing `id` saves pending edits to the old resume before the new one loads.
  */
 export function useResumeDoc(id: Readonly<Ref<string | null>>) {
   const doc = ref<ResumeDoc | null>(null)
+  const contact = ref<ContactInfo | null>(null)
+  const supervisors = ref<SupervisorsDoc | null>(null)
   const status = shallowRef<SaveStatus>('loading')
   const error = shallowRef<string | null>(null)
 
-  // The resume the doc was loaded from; every save goes there.
+  // The resume the documents were loaded from; every save goes there.
   let docId: string | null = null
   // The resume loaded or being loaded; guards against stale loads.
   let target: string | null = null
-  let savedJson = ''
   let timer: ReturnType<typeof setTimeout> | undefined
   // Saves (and the operations run through `withSaved`) go one at a time, each
-  // sending the latest document, so an older request can never land after a
+  // sending the latest documents, so an older request can never land after a
   // newer one or interleave with a rename, restore or delete.
   let queue: Promise<unknown> = Promise.resolve()
 
-  /** Resolves true when the server has the current document. */
+  // The files of the open resume: each document, how it is written, and its JSON as last saved.
+  const files: { doc: Readonly<Ref<unknown>>; write: (id: string, json: string) => Promise<void>; saved: string }[] = [
+    { doc, write: api.saveResume, saved: '' },
+    { doc: contact, write: api.saveContact, saved: '' },
+    { doc: supervisors, write: api.saveSupervisors, saved: '' },
+  ]
+  const unsaved = () => files.filter((f) => f.doc.value && JSON.stringify(f.doc.value) !== f.saved)
+
+  function scheduleSave() {
+    status.value = 'unsaved'
+    clearTimeout(timer)
+    timer = setTimeout(save, AUTOSAVE_MS)
+  }
+
+  /** Resolves true when the server has the current documents. */
   async function writeLatest(): Promise<boolean> {
-    if (!doc.value || !docId) return true
-    const json = JSON.stringify(doc.value)
-    if (json === savedJson) return true
+    if (!docId) return true
+    const pending = unsaved().map((f) => ({ f, json: JSON.stringify(f.doc.value) }))
+    if (!pending.length) return true
     const to = docId
     status.value = 'saving'
     try {
-      await api.saveResume(to, json)
-      if (to === docId) savedJson = json
+      for (const { f, json } of pending) {
+        await f.write(to, json)
+        if (to === docId) f.saved = json
+      }
       error.value = null
-      status.value = JSON.stringify(doc.value) === json ? 'saved' : 'unsaved'
+      // Edits made (or undone) while saving may not have scheduled a save of their own.
+      if (unsaved().length) scheduleSave()
+      else status.value = 'saved'
       return true
     } catch (e) {
       error.value = message(e)
@@ -73,28 +94,28 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
     })
   }
 
-  /** Shows a document the server already has (e.g. a restored version) without saving it. */
+  /** Shows a resume the server already has (e.g. a restored version) without saving it. */
   function replace(next: ResumeDoc) {
     clearTimeout(timer)
-    savedJson = JSON.stringify(next)
+    files[0]!.saved = JSON.stringify(next)
     doc.value = next
     error.value = null
     status.value = 'saved'
   }
 
-  /** The open resume was renamed: keep the document, save to `next` from now on. */
+  /** The open resume was renamed: keep the documents, save to `next` from now on. */
   function retarget(next: string) {
     docId = next
     target = next
   }
 
-  /** Closes the document without saving (its resume was deleted or the data folder changed). */
+  /** Closes the documents without saving (their resume was deleted or the data folder changed). */
   function unload() {
     clearTimeout(timer)
-    doc.value = null
+    doc.value = contact.value = supervisors.value = null
+    for (const f of files) f.saved = ''
     docId = null
     target = null
-    savedJson = ''
     error.value = null
     status.value = 'loading'
   }
@@ -107,14 +128,14 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
       if (target !== next) return null
       unload()
       target = next
-      return next ? api.getResume(next) : null
+      return next ? Promise.all([api.getResume(next), api.getContact(next), api.getSupervisors(next)]) : null
     })
     loaded
-      .then((value) => {
-        if (!value || target !== next) return
-        savedJson = JSON.stringify(value)
+      .then((values) => {
+        if (!values || target !== next) return
         docId = next
-        doc.value = value
+        ;[doc.value, contact.value, supervisors.value] = values
+        for (const f of files) f.saved = JSON.stringify(f.doc.value)
         status.value = 'saved'
       })
       .catch((e) => {
@@ -132,13 +153,33 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
   watch(id, sync, { immediate: true })
 
   watch(
-    doc,
-    (value) => {
-      if (!value || status.value === 'loading') return
-      if (JSON.stringify(value) === savedJson) return
-      status.value = 'unsaved'
-      clearTimeout(timer)
-      timer = setTimeout(save, AUTOSAVE_MS)
+    [doc, contact, supervisors],
+    () => {
+      if (!docId || status.value === 'loading') return
+      if (unsaved().length) scheduleSave()
+      else if (status.value === 'unsaved') {
+        // The edits were reverted (e.g. undone): nothing is left to save.
+        clearTimeout(timer)
+        status.value = 'saved'
+      }
+    },
+    { deep: true },
+  )
+
+  // Keep each supervisor's job label (see Supervisor.job) in step with its entry.
+  watch(
+    [doc, supervisors],
+    () => {
+      if (!doc.value || !supervisors.value) return
+      const labels = new Map<string, string>()
+      for (const section of doc.value.sections) {
+        if (section.kind !== 'entries') continue
+        for (const item of section.items) if (item.type === 'entry') labels.set(item.id, jobLabel(item))
+      }
+      for (const s of supervisors.value.supervisors) {
+        const label = labels.get(s.entryId)
+        if (label !== undefined && label !== s.job) s.job = label
+      }
     },
     { deep: true },
   )
@@ -152,5 +193,5 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
     window.removeEventListener('beforeunload', warnUnsaved)
   })
 
-  return { doc, status, error, save, withSaved, replace, retarget, unload, sync }
+  return { doc, contact, supervisors, status, error, save, withSaved, replace, retarget, unload, sync }
 }

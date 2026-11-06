@@ -2,7 +2,7 @@
 import { shallowRef, watch } from 'vue'
 import { api } from '../api'
 import { formatDateTime } from '../format'
-import type { Version } from '../types'
+import type { SyncResult, Version } from '../types'
 import PromptDialog, { type PromptRequest } from './PromptDialog.vue'
 
 const props = defineProps<{
@@ -13,6 +13,8 @@ const props = defineProps<{
   restoreVersion: (version: Version) => Promise<void>
   /** Creates a new resume from the version and opens it. */
   copyVersion: (version: Version) => Promise<void>
+  /** Saves pending edits, then writes Markdown and PDF copies beside the resume and its versions. */
+  syncFiles: () => Promise<SyncResult>
 }>()
 
 const versions = shallowRef<Version[]>([])
@@ -21,6 +23,8 @@ const label = shallowRef('')
 const saving = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const prompt = shallowRef<PromptRequest | null>(null)
+const syncing = shallowRef(false)
+const syncStatus = shallowRef('')
 
 const describe = (v: Version) => v.label || 'Untitled version'
 
@@ -44,6 +48,7 @@ watch(
   () => props.resumeId,
   () => {
     versions.value = []
+    syncStatus.value = ''
     loading.value = true
     load()
   },
@@ -95,6 +100,24 @@ function remove(version: Version) {
     },
   }
 }
+
+async function sync() {
+  syncing.value = true
+  syncStatus.value = ''
+  error.value = null
+  try {
+    const { written, failed } = await props.syncFiles()
+    const files = written.length === 1 ? 'file' : 'files'
+    syncStatus.value = written.length ? `Updated ${written.length} ${files}.` : 'All files up to date.'
+    if (failed.length) {
+      error.value = `Could not sync ${failed.map((f) => `${f.file} (${f.error})`).join('; ')}`
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    syncing.value = false
+  }
+}
 </script>
 
 <template>
@@ -106,6 +129,15 @@ function remove(version: Version) {
       </label>
       <button class="btn btn-primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save version' }}</button>
     </form>
+
+    <div class="sync">
+      <button class="btn" type="button" :disabled="syncing" @click="sync">
+        {{ syncing ? 'Syncing…' : 'Sync files' }}
+      </button>
+      <span class="sync-status">{{
+        syncStatus || 'Saves a Markdown and PDF copy beside resume.json and each version.'
+      }}</span>
+    </div>
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
@@ -149,6 +181,17 @@ function remove(version: Version) {
 .btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.sync {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sync-status {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .error {

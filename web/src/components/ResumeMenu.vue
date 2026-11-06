@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
+import { useTemplateRef, watch } from 'vue'
+import { useMenu } from '../composables/useMenu'
 import { formatRelative } from '../format'
 import type { ResumeSummary } from '../types'
 
@@ -18,35 +19,17 @@ const emit = defineEmits<{
   remove: []
 }>()
 
-const open = shallowRef(false)
 const root = useTemplateRef<HTMLElement>('root')
+const open = useMenu(root)
+
+watch(open, (isOpen) => {
+  if (isOpen) emit('open')
+})
 
 function choose(action: () => void) {
   open.value = false
   action()
 }
-
-function onPointerDown(event: PointerEvent) {
-  if (!root.value?.contains(event.target as Node)) open.value = false
-}
-
-function onKeyDown(event: KeyboardEvent) {
-  if (event.key === 'Escape') open.value = false
-}
-
-function stopListening() {
-  document.removeEventListener('pointerdown', onPointerDown)
-  document.removeEventListener('keydown', onKeyDown)
-}
-
-watch(open, (isOpen) => {
-  if (!isOpen) return stopListening()
-  emit('open')
-  document.addEventListener('pointerdown', onPointerDown)
-  document.addEventListener('keydown', onKeyDown)
-})
-
-onScopeDispose(stopListening)
 </script>
 
 <template>

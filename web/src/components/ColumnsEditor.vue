@@ -3,8 +3,10 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { newColumn } from '../factory'
 import type { Column } from '../types'
 import StringList from './StringList.vue'
+import VisibilityToggle from './VisibilityToggle.vue'
 
 const columns = defineModel<Column[]>({ required: true })
+const { path } = defineProps<{ /** Field path of the columns array. */ path: string }>()
 
 function remove(index: number) {
   const col = columns.value[index]!
@@ -16,16 +18,17 @@ function remove(index: number) {
 <template>
   <div>
     <VueDraggable v-model="columns" handle=".h-item" :animation="150" class="list">
-      <div v-for="col in columns" :key="col.id" class="column">
+      <div v-for="(col, i) in columns" :key="col.id" class="column" :class="{ 'is-hidden': col.hidden }">
         <div class="column-head">
           <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
-          <input v-model="col.title" class="input column-title" placeholder="Column heading" />
-          <button class="icon-btn danger" type="button" title="Delete column" @click="remove(columns.indexOf(col))">
+          <input v-model="col.title" :data-path="`${path}.${i}.title`" class="input column-title" placeholder="Column heading" />
+          <VisibilityToggle v-model="col.hidden" name="column" />
+          <button class="icon-btn danger" type="button" title="Delete column" @click="remove(i)">
             ×
           </button>
         </div>
         <div class="column-lines">
-          <StringList v-model="col.lines" add-label="Line" rich />
+          <StringList v-model="col.lines" :path="`${path}.${i}.lines`" add-label="Line" rich />
         </div>
       </div>
     </VueDraggable>
@@ -57,6 +60,11 @@ function remove(index: number) {
 
 .column-lines {
   padding: 6px 0 0 22px;
+}
+
+.is-hidden .column-title,
+.is-hidden .column-lines {
+  opacity: 0.45;
 }
 
 .add {

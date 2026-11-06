@@ -64,6 +64,19 @@ textarea {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+/* A sidebar value just opened on the page preview (App.vue revealInSidebar). */
+.revealed {
+  border-radius: var(--radius);
+  animation: reveal 1.4s ease-out;
+}
+
+@keyframes reveal {
+  from {
+    background-color: color-mix(in srgb, var(--accent) 16%, var(--panel));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
 textarea.input {
   resize: vertical;
   min-height: 2.6em;

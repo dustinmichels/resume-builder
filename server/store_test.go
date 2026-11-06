@@ -270,6 +270,52 @@ func TestVersions(t *testing.T) {
 	}
 }
 
+func TestSideFiles(t *testing.T) {
+	l := newLibrary(t)
+	dir := l.choose(t)
+
+	for path := range sideFiles {
+		if got := l.call(t, "GET", "/api/resumes/Resume/"+path, "", 200); string(got) != "{}\n" {
+			t.Fatalf("unsaved %s = %q", path, got)
+		}
+		for _, bad := range []string{"", "[]", "null", `"x"`, "{"} {
+			l.call(t, "PUT", "/api/resumes/Resume/"+path, bad, 400)
+		}
+		l.call(t, "PUT", "/api/resumes/Nope/"+path, `{}`, 404)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Resume", sideFiles["contact"])); err == nil {
+		t.Fatal("a rejected save wrote contact.json")
+	}
+
+	contact := `{"email":"me@example.com"}`
+	l.call(t, "PUT", "/api/resumes/Resume/contact", contact, 204)
+	if _, err := os.Stat(filepath.Join(dir, "Resume", additionalDir, "contact.json")); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.call(t, "GET", "/api/resumes/Resume/contact", "", 200); string(got) != "{\n  \"email\": \"me@example.com\"\n}\n" {
+		t.Fatalf("contact = %q", got)
+	}
+	if got := l.call(t, "GET", "/api/resumes/Resume", "", 200); !bytes.Equal(got, starterJSON) {
+		t.Fatalf("saving contact changed the resume:\n%s", got)
+	}
+
+	// Duplicates, including copies of a version, take the side files along.
+	var v version
+	decodeInto(t, l.call(t, "POST", "/api/resumes/Resume/versions", `{"label":"v"}`, 201), &v)
+	for _, body := range []map[string]string{{"name": "Copy", "from": "Resume"}, {"name": "Old", "from": "Resume", "version": v.ID}} {
+		id := l.create(t, body)
+		if got := l.call(t, "GET", "/api/resumes/"+id+"/contact", "", 200); !strings.Contains(string(got), "me@example.com") {
+			t.Fatalf("%s contact = %q", id, got)
+		}
+		if got := l.call(t, "GET", "/api/resumes/"+id+"/supervisors", "", 200); string(got) != "{}\n" {
+			t.Fatalf("%s supervisors = %q", id, got)
+		}
+	}
+	if got := l.call(t, "GET", "/api/resumes/"+l.create(t, map[string]string{"name": "Blank"})+"/contact", "", 200); string(got) != "{}\n" {
+		t.Fatalf("blank resume contact = %q", got)
+	}
+}
+
 func TestRejectsBadIDs(t *testing.T) {
 	l := newLibrary(t)
 	dir := l.choose(t)

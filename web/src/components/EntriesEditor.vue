@@ -4,8 +4,10 @@ import { cloneEntry, newEntry, newLabel } from '../factory'
 import type { Entry, EntryItem } from '../types'
 import EntryCard from './EntryCard.vue'
 import RichText from './RichText.vue'
+import VisibilityToggle from './VisibilityToggle.vue'
 
 const items = defineModel<EntryItem[]>({ required: true })
+const { path } = defineProps<{ /** Field path of the items array. */ path: string }>()
 
 function remove(index: number) {
   const item = items.value[index]!
@@ -27,12 +29,19 @@ function duplicate(index: number) {
         <EntryCard
           v-if="item.type === 'entry'"
           :model-value="item"
+          :path="`${path}.${i}`"
           @remove="remove(i)"
           @duplicate="duplicate(i)"
         />
-        <div v-else class="label-row">
+        <div v-else class="label-row" :class="{ 'is-hidden': item.hidden }">
           <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
-          <RichText v-model="item.text" placeholder="Subheading, e.g. Non-degree education:" aria-label="Subheading" />
+          <RichText
+            v-model="item.text"
+            :data-path="`${path}.${i}.text`"
+            placeholder="Subheading, e.g. Non-degree education:"
+            aria-label="Subheading"
+          />
+          <VisibilityToggle v-model="item.hidden" name="subheading" />
           <button class="icon-btn danger" type="button" title="Delete subheading" @click="remove(i)">×</button>
         </div>
       </template>
@@ -55,6 +64,10 @@ function duplicate(index: number) {
   align-items: center;
   gap: 4px;
   padding-left: 8px;
+}
+
+.is-hidden > .rich-text {
+  opacity: 0.45;
 }
 
 .adds {

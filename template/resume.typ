@@ -63,10 +63,12 @@
 // What file browsers, PDF viewers and applicant-tracking systems show without
 // reading the page: name as title and author, headline as subject, and the
 // skills grid (table-variant columns sections) split into keywords.
+// Sections, items and columns with `hidden: true` are left off the page.
+#let shown(x) = not x.at("hidden", default: false)
 #let keywords = (
   data.sections
-    .filter(s => s.kind == "columns" and s.at("variant", default: "table") == "table")
-    .map(s => s.columns.map(c => c.lines.map(l => plain-text(l).split(regex("[,;()]")))))
+    .filter(s => shown(s) and s.kind == "columns" and s.at("variant", default: "table") == "table")
+    .map(s => s.columns.filter(shown).map(c => c.lines.map(l => plain-text(l).split(regex("[,;()]")))))
     .flatten()
     .map(k => k.trim())
     .filter(k => k != "")
@@ -210,7 +212,7 @@
 })
 
 #let entries-section(sec, at) = {
-  for (i, item) in sec.items.enumerate() {
+  for (i, item) in sec.items.enumerate().filter(((i, item)) => shown(item)) {
     let at = at + ".items." + str(i)
     if item.type == "label" {
       block(above: 1.6em, below: 0pt, text(weight: "bold", style: "italic", field(at + ".text", rich(item.text))))
@@ -233,7 +235,7 @@
 // Side-by-side variant renders cell-by-cell (title, then its lines), so the
 // text layer keeps each column's words together.
 #let columns-section(sec, at) = {
-  let cols = sec.columns.enumerate().map(((i, c)) => (c, at + ".columns." + str(i)))
+  let cols = sec.columns.enumerate().filter(((i, c)) => shown(c)).map(((i, c)) => (c, at + ".columns." + str(i)))
   if cols.len() == 0 { return }
   if sec.at("variant", default: "table") == "table" {
     let rule = (paint: muted, thickness: 0.6pt, dash: "dotted")
@@ -266,7 +268,7 @@
 }
 
 // ── Body ────────────────────────────────────────────────────────────────────
-#for (i, sec) in data.sections.enumerate() {
+#for (i, sec) in data.sections.enumerate().filter(((i, sec)) => shown(sec)) {
   let at = "sections." + str(i)
   if sec.title != "" { heading(level: 1, field(at + ".title", sec.title)) }
   if sec.kind == "columns" and sec.at("variant", default: "table") == "sections" {

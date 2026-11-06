@@ -1,27 +1,37 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
+import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef } from 'vue'
 import { api, download, type ExportFormat } from './api'
 import BasicsEditor from './components/BasicsEditor.vue'
+import ContactEditor from './components/ContactEditor.vue'
+import DownloadMenu, { type DownloadItem } from './components/DownloadMenu.vue'
 import PreviewPane from './components/PreviewPane.vue'
 import PromptDialog, { type PromptRequest } from './components/PromptDialog.vue'
 import ResumeMenu from './components/ResumeMenu.vue'
 import SectionsEditor from './components/SectionsEditor.vue'
 import SetupScreen from './components/SetupScreen.vue'
 import StyleEditor from './components/StyleEditor.vue'
+import SupervisorsEditor from './components/SupervisorsEditor.vue'
 import VersionsPanel from './components/VersionsPanel.vue'
 import { useLibrary } from './composables/useLibrary'
+import { useLinkChecks } from './composables/useLinkChecks'
 import { usePreview } from './composables/usePreview'
+import { useUndoHistory } from './composables/useUndoHistory'
+import { provideReveal } from './reveal'
 
 const library = useLibrary()
 const { settings, resumes, currentId, error: libraryError } = library
-const { doc, status, error: saveError, save } = library.resume
+const { doc, contact, supervisors, status, error: saveError, save } = library.resume
 const { preview, pageUrls, pending, error: renderError } = usePreview(doc)
+const { checks: linkChecks, error: linkError } = useLinkChecks(doc)
+const { canUndo, canRedo, undo, redo } = useUndoHistory(doc)
 
-const panel = shallowRef<'content' | 'style' | 'versions'>('content')
+const panel = shallowRef<'content' | 'style' | 'contact' | 'supervisors' | 'versions'>('content')
 const exportError = shallowRef<string | null>(null)
 const exporting = shallowRef<ExportFormat | null>(null)
 const actionError = shallowRef<string | null>(null)
 const prompt = shallowRef<PromptRequest | null>(null)
+const sidebar = useTemplateRef<HTMLElement>('sidebar')
+const revealing = provideReveal()
 
 const STATUS_LABELS = {
   loading: 'Loading…',
@@ -33,6 +43,31 @@ const STATUS_LABELS = {
 
 const accentStyle = computed(() => (doc.value ? { '--accent': doc.value.style.accent } : {}))
 const fileBase = computed(() => `${doc.value?.basics.name || 'Resume'} - Resume`)
+
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform)
+const UNDO_KEYS = IS_MAC ? '⌘Z' : 'Ctrl+Z'
+const REDO_KEYS = IS_MAC ? '⇧⌘Z' : 'Ctrl+Y'
+const REVEAL_LABEL = IS_MAC ? 'Open in Finder' : 'Open folder'
+
+/**
+ * Undo/redo keys act on the resume, also inside its text fields. Fields
+ * outside the resume editors ([data-resume-undo]) and dialogs keep the
+ * browser's own undo.
+ */
+function onUndoKey(e: KeyboardEvent) {
+  if (e.isComposing || e.altKey || !(IS_MAC ? e.metaKey : e.ctrlKey)) return
+  const key = e.key.toLowerCase()
+  const isRedo = (key === 'z' && e.shiftKey) || (key === 'y' && !IS_MAC && !e.shiftKey)
+  if (key !== 'z' && !isRedo) return
+  const target = e.target instanceof Element ? e.target : null
+  if (target?.closest('dialog')) return
+  if (target?.closest('input, textarea, select, [contenteditable]') && !target.closest('[data-resume-undo]')) return
+  e.preventDefault()
+  if (isRedo) redo()
+  else undo()
+}
+window.addEventListener('keydown', onUndoKey)
+onScopeDispose(() => window.removeEventListener('keydown', onUndoKey))
 
 const EXPORT_LABELS = { pdf: 'PDF', docx: 'Word', md: 'Markdown' } as const
 
@@ -59,12 +94,55 @@ function downloadJson() {
   download(new Blob([JSON.stringify({ basics, sections }, null, 2)], { type: 'application/json' }), `${fileBase.value}.json`)
 }
 
+const downloadItems = computed<DownloadItem[]>(() => [
+  { label: 'Plain text (.txt)', disabled: !preview.value, action: downloadText },
+  { label: 'JSON (.json)', disabled: !doc.value, action: downloadJson },
+  { label: 'Markdown (.md)', disabled: !doc.value || !!exporting.value, action: () => downloadExport('md') },
+  { label: 'Word (.docx)', disabled: !doc.value || !!exporting.value, action: () => downloadExport('docx') },
+])
+
+/**
+ * Shows a value opened on the page in the Content panel: expands the cards
+ * around it, scrolls the panel to it unless it's already in view, and
+ * flashes it. Only the panel scrolls, never the window, so the stacked
+ * narrow layout stays on the preview.
+ */
+async function revealInSidebar(path: string) {
+  panel.value = 'content'
+  revealing.value = path
+  await nextTick()
+  revealing.value = null
+  const field = sidebar.value?.querySelector<HTMLElement>(`[data-path="${path}"]`)
+  const scroller = field?.closest<HTMLElement>('.editor-scroll')
+  if (!field || !scroller) return
+  const view = scroller.getBoundingClientRect()
+  const box = field.getBoundingClientRect()
+  if (box.top < view.top || box.bottom > view.bottom) {
+    const margin = Math.max(0, (view.height - box.height) / 2)
+    scroller.scrollTo({ top: scroller.scrollTop + box.top - view.top - margin, behavior: 'smooth' })
+  }
+  field.classList.remove('revealed')
+  void field.offsetWidth // restart the animation
+  field.classList.add('revealed')
+  field.addEventListener('animationend', () => field.classList.remove('revealed'), { once: true })
+}
+
 async function switchResume(id: string) {
   actionError.value = null
   try {
     await library.switchTo(id)
   } catch (e) {
     actionError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function revealResume() {
+  if (!currentId.value) return
+  actionError.value = null
+  try {
+    await api.revealResume(currentId.value)
+  } catch (e) {
+    actionError.value = `${REVEAL_LABEL} failed: ${e instanceof Error ? e.message : e}`
   }
 }
 
@@ -149,28 +227,43 @@ function promptSettings() {
       >
         {{ STATUS_LABELS[status] }}
       </button>
+      <div class="history">
+        <button class="icon-btn" type="button" :title="`Undo (${UNDO_KEYS})`" aria-label="Undo" :disabled="!canUndo" @click="undo">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 14 4 9l5-5" />
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+          </svg>
+        </button>
+        <button class="icon-btn" type="button" :title="`Redo (${REDO_KEYS})`" aria-label="Redo" :disabled="!canRedo" @click="redo">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m15 14 5-5-5-5" />
+            <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+          </svg>
+        </button>
+      </div>
       <span v-if="actionError || saveError || exportError" class="toolbar-error" role="alert">
         {{ actionError ?? exportError ?? saveError }}
       </span>
       <div class="actions">
-        <button class="btn btn-quiet" type="button" :disabled="!preview" @click="downloadText">Download text</button>
-        <button class="btn btn-quiet" type="button" :disabled="!doc" @click="downloadJson">Download JSON</button>
-        <button
-          v-for="format in (['md', 'docx'] as const)"
-          :key="format"
-          class="btn btn-quiet"
-          type="button"
-          :disabled="!doc || !!exporting"
-          @click="downloadExport(format)"
-        >
-          {{ exporting === format ? 'Exporting…' : `Download ${EXPORT_LABELS[format]}` }}
-        </button>
+        <DownloadMenu :items="downloadItems" :busy-label="exporting && exporting !== 'pdf' ? 'Exporting…' : null" />
         <button class="btn btn-primary" type="button" :disabled="!doc || !!exporting" @click="downloadExport('pdf')">
           {{ exporting === 'pdf' ? 'Exporting…' : 'Download PDF' }}
         </button>
       </div>
+      <button
+        class="icon-btn"
+        type="button"
+        :title="`${REVEAL_LABEL}: this resume's folder`"
+        :aria-label="REVEAL_LABEL"
+        :disabled="!currentId"
+        @click="revealResume"
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2.5h9A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
+        </svg>
+      </button>
       <button class="icon-btn" type="button" title="Data folder settings" aria-label="Settings" @click="promptSettings">
-        <svg class="gear" viewBox="0 0 24 24" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
           <path
             d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
@@ -180,16 +273,18 @@ function promptSettings() {
     </header>
 
     <main class="workspace">
-      <aside class="editor">
+      <aside ref="sidebar" class="editor">
         <div class="editor-tabs" role="tablist">
           <button role="tab" :aria-selected="panel === 'content'" @click="panel = 'content'">Content</button>
           <button role="tab" :aria-selected="panel === 'style'" @click="panel = 'style'">Style</button>
+          <button role="tab" :aria-selected="panel === 'contact'" @click="panel = 'contact'">Contact</button>
+          <button role="tab" :aria-selected="panel === 'supervisors'" @click="panel = 'supervisors'">Supervisors</button>
           <button role="tab" :aria-selected="panel === 'versions'" @click="panel = 'versions'">Versions</button>
         </div>
 
-        <div v-if="!doc || !currentId" class="editor-empty">{{ saveError ?? 'Loading resume…' }}</div>
+        <div v-if="!doc || !contact || !supervisors || !currentId" class="editor-empty">{{ saveError ?? 'Loading resume…' }}</div>
 
-        <div v-else-if="panel === 'content'" class="editor-scroll">
+        <div v-else-if="panel === 'content'" class="editor-scroll" data-resume-undo>
           <p class="hint">Select text and press ⌘B, ⌘I or ⌘K to format. Click anything on the page preview to edit it there.</p>
           <section class="group">
             <h2 class="group-title">Header</h2>
@@ -201,11 +296,21 @@ function promptSettings() {
           </section>
         </div>
 
-        <div v-else-if="panel === 'style'" class="editor-scroll">
+        <div v-else-if="panel === 'style'" class="editor-scroll" data-resume-undo>
           <section class="group">
             <h2 class="group-title">Page style</h2>
             <StyleEditor v-model="doc.style" />
           </section>
+        </div>
+
+        <div v-else-if="panel === 'contact'" class="editor-scroll">
+          <p class="hint">Your details for filling in applications. Saved as additional/contact.json in the resume's folder; not printed or exported.</p>
+          <ContactEditor v-model="contact" />
+        </div>
+
+        <div v-else-if="panel === 'supervisors'" class="editor-scroll">
+          <p class="hint">A supervisor for each job. Saved as additional/supervisors.json in the resume's folder; not printed or exported.</p>
+          <SupervisorsEditor v-model="supervisors" :sections="doc.sections" />
         </div>
 
         <div v-else class="editor-scroll">
@@ -216,12 +321,24 @@ function promptSettings() {
               :save-version="library.saveVersion"
               :restore-version="library.restoreVersion"
               :copy-version="library.copyVersion"
+              :sync-files="library.syncFiles"
             />
           </section>
         </div>
       </aside>
 
-      <PreviewPane class="preview" :doc="doc" :preview="preview" :page-urls="pageUrls" :pending="pending" :error="renderError" />
+      <PreviewPane
+        class="preview"
+        data-resume-undo
+        :doc="doc"
+        :preview="preview"
+        :page-urls="pageUrls"
+        :pending="pending"
+        :error="renderError"
+        :link-checks="linkChecks"
+        :link-error="linkError"
+        @select="revealInSidebar"
+      />
     </main>
 
     <PromptDialog v-model="prompt" />
@@ -254,7 +371,7 @@ function promptSettings() {
   color: var(--error);
 }
 
-.gear {
+.icon {
   width: 17px;
   height: 17px;
   fill: none;
@@ -262,6 +379,18 @@ function promptSettings() {
   stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.history {
+  display: flex;
+  gap: 2px;
+}
+
+.history .icon-btn:disabled {
+  background: transparent;
+  color: var(--faint);
+  opacity: 0.4;
+  cursor: default;
 }
 
 .save-status {

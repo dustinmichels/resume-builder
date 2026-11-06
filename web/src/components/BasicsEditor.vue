@@ -15,18 +15,18 @@ function removeContact(index: number) {
   <div class="basics">
     <label class="field">
       <span class="field-label">Name</span>
-      <input v-model="basics.name" class="input name" />
+      <input v-model="basics.name" data-path="basics.name" class="input name" />
     </label>
 
     <div class="field">
       <span class="field-label">Headline (joined with //)</span>
-      <StringList v-model="basics.headline" add-label="Headline part" />
+      <StringList v-model="basics.headline" path="basics.headline" add-label="Headline part" />
     </div>
 
     <div class="field">
       <span class="field-label">Contact links</span>
       <VueDraggable v-model="basics.contacts" handle=".h-item" :animation="150" class="contacts">
-        <div v-for="(contact, i) in basics.contacts" :key="contact.id" class="contact">
+        <div v-for="(contact, i) in basics.contacts" :key="contact.id" :data-path="`basics.contacts.${i}`" class="contact">
           <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
           <input v-model="contact.text" class="input" placeholder="Shown text" aria-label="Shown text" />
           <input v-model="contact.url" class="input url" placeholder="Link (optional)" aria-label="Link" />

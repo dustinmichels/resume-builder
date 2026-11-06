@@ -41,6 +41,11 @@ export function richToHtml(src: string): string {
   return html.endsWith('<br>') ? `${html}<br>` : html
 }
 
+/** The text markup shows, formatting dropped. */
+export function richToText(src: string): string {
+  return src.replace(RICH, (_, boldItalic, bold, italic, label) => label ?? richToText(boldItalic ?? bold ?? italic))
+}
+
 interface Format {
   bold: boolean
   italic: boolean

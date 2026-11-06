@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -187,6 +188,108 @@ func TestAttachedJSON(t *testing.T) {
 		`{"kind":"columns","columns":[{"title":"Skills","lines":["Go"]}]}]}`
 	if compact.String() != want {
 		t.Errorf("attached JSON\n got %s\nwant %s", compact.String(), want)
+	}
+}
+
+// TestHiddenParts checks that hidden sections, items and columns stay off the
+// page, out of the exports and checks, and that the visible values after them
+// keep their click-to-edit paths (indices into the unfiltered arrays).
+func TestHiddenParts(t *testing.T) {
+	for _, tool := range []string{"typst", "pdftotext"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip(tool + " not installed")
+		}
+	}
+	raw := []byte(`{
+  "basics": {"name": "Ada", "headline": [], "contacts": []},
+  "sections": [
+    {"kind": "text", "hidden": true, "title": "Secret Profile", "paragraphs": ["Hidden paragraph"]},
+    {"kind": "entries", "title": "Work", "items": [
+      {"type": "label", "hidden": true, "text": "Hidden label"},
+      {"type": "entry", "hidden": true, "title": "Hidden job", "date": "2019", "subtitle": "", "location": "", "bullets": []},
+      {"type": "entry", "title": "Shown job", "date": "2020", "subtitle": "", "location": "", "bullets": []}
+    ]},
+    {"kind": "columns", "title": "Skills", "variant": "table", "columns": [
+      {"hidden": true, "title": "Secret skills", "lines": ["Cobol"]},
+      {"title": "Languages", "lines": ["Go"]}
+    ]}
+  ],
+  "style": {"accent": "#000000", "font": "Helvetica", "fontSize": 10, "margin": 0.6,
+            "leader": "dotted", "bullet": "disc", "paragraphMarker": "none"}
+}`)
+	hiddenWords := []string{"Secret", "Hidden", "Cobol"}
+
+	out, err := render(context.Background(), "../template/resume.typ", raw, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	text, _, err := extractText(context.Background(), out.PDFPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attached, err := attachedJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := decodeDoc(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docxBytes, err := docxResume(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(docxBytes), int64(len(docxBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := zr.Open("word/document.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs := map[string]string{
+		"PDF text":      text,
+		"attached JSON": string(attached),
+		"Markdown":      string(markdownResume(doc)),
+		"Word":          docxText(t, string(documentXML)),
+	}
+	for name, s := range outputs {
+		for _, w := range hiddenWords {
+			if strings.Contains(s, w) {
+				t.Errorf("%s contains hidden %q:\n%s", name, w, s)
+			}
+		}
+		for _, w := range []string{"Shown job", "Languages"} {
+			if !strings.Contains(s, w) {
+				t.Errorf("%s is missing %q:\n%s", name, w, s)
+			}
+		}
+	}
+	for _, c := range parserChecks(doc, text, len(out.SVGs)) {
+		if strings.Contains(c.Detail, "Hidden") || strings.Contains(c.Detail, "Secret") {
+			t.Errorf("check reports hidden content: %+v", c)
+		}
+	}
+
+	var paths []string
+	for _, f := range out.Fields {
+		paths = append(paths, f.Path)
+	}
+	for _, want := range []string{"sections.1.items.2.title", "sections.2.columns.1.title", "sections.2.columns.1.lines.0"} {
+		if !slices.Contains(paths, want) {
+			t.Errorf("no box for %s; got %v", want, paths)
+		}
+	}
+	for _, p := range paths {
+		if strings.HasPrefix(p, "sections.0.") || strings.HasPrefix(p, "sections.1.items.0.") ||
+			strings.HasPrefix(p, "sections.1.items.1.") || strings.HasPrefix(p, "sections.2.columns.0.") {
+			t.Errorf("hidden value has a box: %s", p)
+		}
 	}
 }
 

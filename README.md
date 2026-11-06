@@ -38,8 +38,13 @@ Everything lives in plain files in the data folder, so it can be backed up, sync
 ~/resume-builder/
   Resume/
     resume.json                               the resume, autosaved as you edit
+    resume.md, resume.pdf                     Markdown and PDF copies, written by Sync files
+    additional/                               supporting details, never printed
+      contact.json                            your contact details (Contact tab)
+      supervisors.json                        a supervisor per job (Supervisors tab)
     versions/
       20261106-153000 Sent to Acme.json       a saved version: timestamp, then its label
+      20261106-153000 Sent to Acme.md, .pdf   its Markdown and PDF copies, written by Sync files
   Designer CV/
     resume.json
   .trash/
@@ -49,34 +54,60 @@ Everything lives in plain files in the data folder, so it can be backed up, sync
 Each folder holding a `resume.json` is a resume; its folder name is the name shown in the editor, so renaming one
 renames the folder. Saving a version snapshots the resume as last saved; restoring a version first saves the current
 resume as a version labelled `Before restoring …`, so a restore can always be undone. Deleting a resume moves its
-folder, versions included, into `.trash`; empty that folder by hand when you no longer need them.
+folder, versions included, into `.trash`; empty that folder by hand when you no longer need them. The folder button in
+the toolbar opens the current resume's folder in Finder (Explorer on Windows, the default file manager elsewhere).
+
+**Sync files** (Versions tab) writes a Markdown and a PDF copy beside `resume.json` and each version, named after
+the JSON file. It saves pending edits first and skips copies already up to date: a Markdown file is rewritten when its
+content changes, a PDF when it is older than its JSON or the template. A file that fails to render is reported and
+the rest still sync. Deleting a version deletes its copies.
+
+`additional/contact.json` and `additional/supervisors.json` hold details for job applications that don't belong on the page: your name,
+email, phone and mailing address, and for each entry a supervisor's name, position, email and phone. They are
+written only once you fill something in, autosave with the resume, and are never rendered or exported. They move,
+duplicate and go to `.trash` with their resume, but versions don't include them: restoring a version leaves them as
+they are, and a copy of a version gets the current ones. Supervisors are matched to entries by the entry's `id`; each
+also records the entry's title and organization (`job`), so one whose entry you delete is still listed, under
+**No longer in the resume**, until you remove it.
 
 ## Readable by people and machines
 
 Every decoration is drawn by the template as a shape, never typed as a character:
 
-| On the page | In the PDF text layer |
-| --- | --- |
-| `TUFTS UNIVERSITY ·········· Exp. May 2027` | `TUFTS UNIVERSITY Exp. May 2027` |
-| `❖ Emphasis on walkable…` | `Emphasis on walkable…` |
-| `+1 720… ● dustin@… ● dustinmichels.com` | `+1 720… dustin@… dustinmichels.com` |
+| On the page                                 | In the PDF text layer                |
+| ------------------------------------------- | ------------------------------------ |
+| `TUFTS UNIVERSITY ·········· Exp. May 2027` | `TUFTS UNIVERSITY Exp. May 2027`     |
+| `❖ Emphasis on walkable…`                   | `Emphasis on walkable…`              |
+| `+1 720… ● dustin@… ● dustinmichels.com`    | `+1 720… dustin@… dustinmichels.com` |
 
-The PDF is also tagged (headings, lists) and carries the content as an attached `resume.json`, without editor-only
-fields (ids, style, layout flags) or blank lines. Its document properties, shown by viewers, file browsers and
-applicant-tracking systems, come from the resume:
+The PDF is also tagged (headings, lists), validated as PDF/UA-1 (the accessible-PDF standard) when the template
+allows it, and carries the content as an attached `resume.json`, without editor-only fields (ids, style, layout
+flags) or blank lines. Its document properties, shown by viewers, file browsers and applicant-tracking systems,
+come from the resume:
 
-| Property | Source |
-| --- | --- |
-| Title | `<name> – Resume` |
-| Author | name |
-| Subject | headline lines, joined with ` · ` |
+| Property | Source                                                                                            |
+| -------- | ------------------------------------------------------------------------------------------------- |
+| Title    | `<name> – Resume`                                                                                 |
+| Author   | name                                                                                              |
+| Subject  | headline lines, joined with `·`                                                                   |
 | Keywords | lines of table-style columns sections (the skills grid), split at `,` `;` `(` `)`, markup removed |
 
-The **What machines read** tab shows the extracted text (reading order and layout). The **Checks** tab flags
-typed dot leaders, symbol characters (❖ ● emoji), entry titles split from their dates, dates without a year,
-and any content missing from the text layer.
+The **What machines read** tab shows the extracted text (reading order and layout). The **Checks** tab groups its
+findings by reader:
+
+- **Parsers** (the `pdftotext` text layer): typed dot leaders, symbol characters (❖ ● emoji), entry titles split
+  from their dates, dates without a year, and any content missing from the text layer.
+- **Screen readers** (the PDF's tags, via `pdfinfo -struct-text`): Typst's PDF/UA-1 violations (a template that
+  breaks them still renders, without the standard), content hidden from or read out of order by screen readers,
+  section titles not tagged as headings, and accent-color contrast below WCAG AA (4.5:1).
+- **Links**: links without `https://` (or `mailto:`, `tel:`), link text naming a different address than the
+  target, links not clickable in the PDF (markup in a field the template prints as plain text), and web links
+  that don't open. The server requests each web link at most once every 10 minutes, separately from rendering;
+  sites that refuse automated requests (LinkedIn's 999) show as unconfirmed, not broken.
 
 ## Downloads
+
+**Download PDF** is its own toolbar button; the other formats are under the **Download** menu next to it.
 
 - **PDF**: the Typst render you see in the preview.
 - **Word** (`.docx`): the same content and style, built from native Word features so it stays editable and
@@ -90,11 +121,22 @@ and any content missing from the text layer.
 
 Click any text on the **Page** preview to edit that value in place: a small editor opens next to it and the page
 re-renders as you type. In bullets, paragraphs, column lines and headline parts, Enter adds the next item and
-Backspace in an empty one removes it; Tab and Shift+Tab move between values. Esc closes the editor.
+Backspace in an empty one removes it; Tab and Shift+Tab move between values. Esc closes the editor. The sidebar
+follows along: it switches to **Content**, expands the section and entry holding the value, scrolls to its field
+and briefly highlights it.
 
 The template tags every editable value with an invisible marker (`field`/`block-field` in `template/resume.typ`);
 the server reads their positions with `typst eval 'query(<field>)'` and sends them with each preview. Markers don't
 change the layout or the PDF text layer. A custom template without them still renders; it just isn't clickable.
+
+⌘Z / Ctrl+Z (or the arrows next to the save status) undoes resume edits, including inside text fields; ⇧⌘Z /
+Ctrl+Y redoes. Typing with pauses under a second counts as one step. History covers the resume (Content and Style
+tabs, the preview editor) and resets when you open another resume or restore a version; the Contact, Supervisors and
+Versions fields keep the browser's own per-field undo.
+
+The eye button on a section, entry, subheading or column hides it from the page without deleting it: it stays in
+`resume.json` (as `"hidden": true`) and in the editor, dimmed, but is left out of the PDF, the Word, Markdown and text
+exports, the attached JSON, the PDF keywords and the checks. Click the eye again to bring it back.
 
 ## Content format
 

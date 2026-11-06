@@ -1,48 +1,56 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
+import { useExpandOnReveal } from '../reveal'
 import type { Entry } from '../types'
 import RichText from './RichText.vue'
 import StringList from './StringList.vue'
+import VisibilityToggle from './VisibilityToggle.vue'
 
 const entry = defineModel<Entry>({ required: true })
+const { path } = defineProps<{ /** Field path of the entry, e.g. "sections.1.items.3". */ path: string }>()
 const emit = defineEmits<{ remove: []; duplicate: [] }>()
 
 // New (blank) entries open ready for typing; existing ones start collapsed.
 const open = shallowRef(!entry.value.title)
+useExpandOnReveal(
+  () => path,
+  () => (open.value = true),
+)
 const heading = computed(() => entry.value.title || 'Untitled entry')
 </script>
 
 <template>
-  <div class="entry" :class="{ open }">
+  <div class="entry" :class="{ open, 'is-hidden': entry.hidden }">
     <div class="entry-head">
       <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
       <button class="toggle" type="button" :aria-expanded="open" @click="open = !open">
         <span class="title">{{ heading }}</span>
         <span class="date">{{ entry.date }}</span>
       </button>
+      <VisibilityToggle v-model="entry.hidden" name="entry" />
       <button class="icon-btn" type="button" title="Duplicate entry" @click="emit('duplicate')">⧉</button>
       <button class="icon-btn danger" type="button" title="Delete entry" @click="emit('remove')">×</button>
     </div>
     <div v-if="open" class="entry-body">
       <label class="field">
         <span class="field-label">Title</span>
-        <input v-model="entry.title" class="input" placeholder="Job title or school" />
+        <input v-model="entry.title" :data-path="`${path}.title`" class="input" placeholder="Job title or school" />
       </label>
       <label class="field">
         <span class="field-label">Dates</span>
-        <input v-model="entry.date" class="input" placeholder="JAN 2021 – PRESENT" />
+        <input v-model="entry.date" :data-path="`${path}.date`" class="input" placeholder="JAN 2021 – PRESENT" />
       </label>
       <div class="field">
         <span class="field-label">Subtitle</span>
-        <RichText v-model="entry.subtitle" placeholder="Organization or degree" aria-label="Subtitle" />
+        <RichText v-model="entry.subtitle" :data-path="`${path}.subtitle`" placeholder="Organization or degree" aria-label="Subtitle" />
       </div>
       <label class="field">
         <span class="field-label">Location</span>
-        <input v-model="entry.location" class="input" placeholder="City, ST" />
+        <input v-model="entry.location" :data-path="`${path}.location`" class="input" placeholder="City, ST" />
       </label>
       <div class="field bullets">
         <span class="field-label">Bullets</span>
-        <StringList v-model="entry.bullets" add-label="Bullet" rich />
+        <StringList v-model="entry.bullets" :path="`${path}.bullets`" add-label="Bullet" rich />
       </div>
     </div>
   </div>
@@ -91,6 +99,10 @@ const heading = computed(() => entry.value.title || 'Untitled entry')
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.is-hidden .toggle {
+  opacity: 0.45;
 }
 
 .entry-body {

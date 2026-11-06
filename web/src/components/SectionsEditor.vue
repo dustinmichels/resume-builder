@@ -26,6 +26,7 @@ function remove(index: number) {
         v-for="(section, i) in sections"
         :key="section.id"
         :model-value="section"
+        :path="`sections.${i}`"
         @remove="remove(i)"
       />
     </VueDraggable>

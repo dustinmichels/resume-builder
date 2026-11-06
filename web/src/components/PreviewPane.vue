@@ -2,7 +2,7 @@
 import markdownit from 'markdown-it'
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from 'vue'
 import { describe, resolves } from '../fieldPath'
-import type { FieldBox, Preview, ResumeDoc } from '../types'
+import type { Check, FieldBox, Preview, ResumeDoc } from '../types'
 import FieldEditor from './FieldEditor.vue'
 
 // Defaults keep rendering safe for v-html: raw HTML is escaped and
@@ -16,13 +16,20 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   return renderLinkOpen(tokens, idx, options, env, self)
 }
 
-const { preview, pageUrls, pending, error, doc } = defineProps<{
+const { preview, pageUrls, pending, error, doc, linkChecks, linkError } = defineProps<{
   preview: Preview | null
   pageUrls: string[]
   pending: boolean
   error: string | null
   /** Edited in place by clicking values on the Page tab. */
   doc: ResumeDoc | null
+  /** Web link requests, null while the first answer is pending. */
+  linkChecks: Check[] | null
+  linkError: string | null
+}>()
+const emit = defineEmits<{
+  /** A value was opened for editing on the Page tab, by click, Tab or adding an item. */
+  select: [path: string]
 }>()
 
 type Tab = 'page' | 'text' | 'markdown' | 'checks'
@@ -32,12 +39,32 @@ const markdownMode = shallowRef<'rendered' | 'source'>('rendered')
 
 const markdownHtml = computed(() => md.render(preview?.markdown ?? ''))
 
-const issues = computed(() => preview?.checks.filter((c) => c.level === 'warn' || c.level === 'error') ?? [])
+const checks = computed<Check[]>(() => {
+  if (!preview) return []
+  const web: Check[] = linkError
+    ? [{ group: 'Links', level: 'info', title: 'Web links not checked', detail: linkError }]
+    : (linkChecks ?? [{ group: 'Links', level: 'info', title: 'Checking web links…' }])
+  return [...preview.checks, ...web]
+})
 
-// Checks first by severity, then the rest.
+const issues = computed(() => checks.value.filter((c) => c.level === 'warn' || c.level === 'error'))
+
+const GROUPS: Record<Check['group'], string> = {
+  Parsers: 'What applicant tracking systems get from the text layer.',
+  'Screen readers': 'What assistive technology gets from the PDF’s tags.',
+  Links: 'Whether links open, from the PDF and on the web.',
+}
+
+// Grouped by audience, each group by severity.
 const SEVERITY = { error: 0, warn: 1, info: 2, ok: 3 } as const
-const sortedChecks = computed(() =>
-  [...(preview?.checks ?? [])].sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level]),
+const checkGroups = computed(() =>
+  (Object.keys(GROUPS) as Check['group'][])
+    .map((name) => ({
+      name,
+      about: GROUPS[name],
+      checks: checks.value.filter((c) => c.group === name).sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level]),
+    }))
+    .filter((g) => g.checks.length > 0),
 )
 
 const textPages = computed(() => {
@@ -109,6 +136,9 @@ watch(
     if (box) anchor.value = box
   },
 )
+watch(activePath, (path) => {
+  if (path) emit('select', path)
+})
 
 function navigate(path: string) {
   activePath.value = path
@@ -301,15 +331,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
         <pre v-else class="text raw">{{ preview?.markdown }}</pre>
       </div>
 
-      <ul v-else class="checks">
-        <li v-for="check in sortedChecks" :key="check.title" class="check" :class="check.level">
-          <span class="check-icon" aria-hidden="true">{{ ICONS[check.level] }}</span>
-          <div>
-            <div class="check-title">{{ check.title }}</div>
-            <pre v-if="check.detail" class="check-detail">{{ check.detail }}</pre>
-          </div>
-        </li>
-      </ul>
+      <div v-else class="checks">
+        <section v-for="group in checkGroups" :key="group.name" class="check-group">
+          <h3 class="group-title">{{ group.name }}</h3>
+          <p class="explain">{{ group.about }}</p>
+          <ul class="check-list">
+            <li v-for="check in group.checks" :key="check.title" class="check" :class="check.level">
+              <span class="check-icon" aria-hidden="true">{{ ICONS[check.level] }}</span>
+              <div>
+                <div class="check-title">{{ check.title }}</div>
+                <pre v-if="check.detail" class="check-detail">{{ check.detail }}</pre>
+              </div>
+            </li>
+          </ul>
+        </section>
+      </div>
     </div>
   </div>
 </template>
@@ -585,6 +621,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 .checks {
   max-width: 720px;
   margin: 0 auto;
+  display: grid;
+  gap: 24px;
+}
+
+.group-title {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.check-group .explain {
+  margin-bottom: 10px;
+}
+
+.check-list {
+  margin: 0;
   padding: 0;
   list-style: none;
   display: grid;

@@ -1,4 +1,15 @@
-import type { Preview, ResumeDoc, ResumeSummary, Settings, Version } from './types'
+import { newContactInfo } from './factory'
+import type {
+  Check,
+  ContactInfo,
+  Preview,
+  ResumeDoc,
+  ResumeSummary,
+  Settings,
+  SupervisorsDoc,
+  SyncResult,
+  Version,
+} from './types'
 
 /** Formats the server renders; each is also the file extension. */
 export type ExportFormat = 'pdf' | 'docx' | 'md'
@@ -63,6 +74,20 @@ export const api = {
     await request(resumePath(id), { method: 'DELETE' })
   },
 
+  /** Files the resume never saved read as defaults. */
+  async getContact(id: string): Promise<ContactInfo> {
+    return { ...newContactInfo(), ...(await (await request(`${resumePath(id)}/contact`)).json()) }
+  },
+  async saveContact(id: string, json: string): Promise<void> {
+    await request(`${resumePath(id)}/contact`, send('PUT', json))
+  },
+  async getSupervisors(id: string): Promise<SupervisorsDoc> {
+    return { supervisors: [], ...(await (await request(`${resumePath(id)}/supervisors`)).json()) }
+  },
+  async saveSupervisors(id: string, json: string): Promise<void> {
+    await request(`${resumePath(id)}/supervisors`, send('PUT', json))
+  },
+
   /** Newest first. */
   async listVersions(id: string): Promise<Version[]> {
     return (await request(`${resumePath(id)}/versions`)).json()
@@ -81,9 +106,21 @@ export const api = {
   async deleteVersion(id: string, version: string): Promise<void> {
     await request(versionPath(id, version), { method: 'DELETE' })
   },
+  /** Writes a Markdown and PDF copy beside resume.json and each saved version, skipping up-to-date ones. */
+  async syncFiles(id: string): Promise<SyncResult> {
+    return (await request(`${resumePath(id)}/sync`, { method: 'POST' })).json()
+  },
+  /** Opens the resume's folder in Finder (or the system file manager). */
+  async revealResume(id: string): Promise<void> {
+    await request(`${resumePath(id)}/reveal`, { method: 'POST' })
+  },
 
   async preview(json: string, signal: AbortSignal): Promise<Preview> {
     return (await request('/api/preview', send('POST', json, signal))).json()
+  },
+  /** Requests the resume's web links; the server remembers answers for a few minutes. */
+  async checkLinks(json: string, signal: AbortSignal): Promise<Check[]> {
+    return (await request('/api/links', send('POST', json, signal))).json()
   },
   async exportAs(format: ExportFormat, json: string): Promise<Blob> {
     return (await request(`/api/${format}`, send('POST', json))).blob()

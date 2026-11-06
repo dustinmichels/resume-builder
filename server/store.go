@@ -4,7 +4,9 @@ package main
 // resume, each with its saved versions.
 //
 //	<dataDir>/<resume name>/resume.json
+//	<dataDir>/<resume name>/additional/contact.json, supervisors.json   (side files, optional)
 //	<dataDir>/<resume name>/versions/<YYYYMMDD-HHMMSS>[ <label>].json
+//	<dataDir>/<resume name>/[versions/]<name>.md, <name>.pdf     (exports beside each .json, see sync.go)
 //	<dataDir>/.trash/<resume name> <YYYYMMDD-HHMMSS>/
 
 import (
@@ -31,12 +33,21 @@ import (
 var starterJSON []byte
 
 const (
-	resumeFile  = "resume.json"
-	versionsDir = "versions"
-	trashDir    = ".trash"
-	stampLayout = "20060102-150405"
-	maxNameLen  = 80
+	resumeFile    = "resume.json"
+	versionsDir   = "versions"
+	additionalDir = "additional"
+	trashDir      = ".trash"
+	stampLayout   = "20060102-150405"
+	maxNameLen    = 80
 )
+
+// sideFiles are the documents kept in a resume's additional folder, by the
+// URL name they are served under. They are never rendered; they move, go to
+// the trash and get duplicated with the resume, but versions don't include them.
+var sideFiles = map[string]string{
+	"contact":     filepath.Join(additionalDir, "contact.json"),
+	"supervisors": filepath.Join(additionalDir, "supervisors.json"),
+}
 
 var errNoDataDir = errors.New("choose a data folder first")
 
@@ -228,15 +239,23 @@ func listResumes(dir string) ([]resumeSummary, error) {
 	return out, nil
 }
 
-// newResume creates resume folder id in dir holding data as its resume.json.
-func newResume(dir, id string, data []byte) error {
+// newResume creates resume folder id in dir holding files (resume.json and
+// any side files).
+func newResume(dir, id string, files map[string][]byte) error {
 	rdir := filepath.Join(dir, id)
 	if err := os.Mkdir(rdir, 0o755); err != nil {
 		return err
 	}
-	if err := writeFileAtomic(filepath.Join(rdir, resumeFile), data); err != nil {
-		os.RemoveAll(rdir)
-		return err
+	for name, data := range files {
+		p := filepath.Join(rdir, name)
+		err := os.MkdirAll(filepath.Dir(p), 0o755)
+		if err == nil {
+			err = writeFileAtomic(p, data)
+		}
+		if err != nil {
+			os.RemoveAll(rdir)
+			return err
+		}
 	}
 	return nil
 }
@@ -258,7 +277,7 @@ func (s *server) seed(dir string) error {
 			return err
 		}
 	}
-	return newResume(dir, uniqueName(dir, "Resume"), data)
+	return newResume(dir, uniqueName(dir, "Resume"), map[string][]byte{resumeFile: data})
 }
 
 // parseVersion reads a version id: "<YYYYMMDD-HHMMSS>[-N][ <label>]".
@@ -498,7 +517,7 @@ func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 	}
 	defer unlock()
 
-	data := starterJSON
+	files := map[string][]byte{resumeFile: starterJSON}
 	switch {
 	case body.From != "":
 		rdir, ok := resumeDir(w, dir, body.From)
@@ -516,13 +535,25 @@ func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 			httpError(w, http.StatusInternalServerError, err)
 			return
 		}
-		data = b
+		files[resumeFile] = b
+		// Side files aren't versioned, so a copy of a version gets the current ones.
+		for _, name := range sideFiles {
+			b, err := os.ReadFile(filepath.Join(rdir, name))
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				httpError(w, http.StatusInternalServerError, err)
+				return
+			}
+			files[name] = b
+		}
 	case body.Version != "":
 		httpError(w, http.StatusBadRequest, errors.New("a version needs the resume it is from"))
 		return
 	}
 	id := uniqueName(dir, sanitizeName(body.Name))
-	if err := newResume(dir, id, data); err != nil {
+	if err := newResume(dir, id, files); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -546,6 +577,12 @@ func (s *server) putResume(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.writeResumeFile(w, r, resumeFile, raw)
+}
+
+// writeResumeFile saves raw JSON, indented, as file name (a path relative to
+// the folder, created as needed) of the resume in the URL.
+func (s *server) writeResumeFile(w http.ResponseWriter, r *http.Request, name string, raw []byte) {
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, raw, "", "  "); err != nil {
 		httpError(w, http.StatusBadRequest, err)
@@ -562,11 +599,58 @@ func (s *server) putResume(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := writeFileAtomic(filepath.Join(rdir, resumeFile), pretty.Bytes()); err != nil {
+	p := filepath.Join(rdir, name)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		httpError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := writeFileAtomic(p, pretty.Bytes()); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// getSideFile serves side file name of a resume; one never saved reads as {}.
+func (s *server) getSideFile(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		dir, unlock, ok := s.lockDir(w, false)
+		if !ok {
+			return
+		}
+		defer unlock()
+		rdir, ok := resumeDir(w, dir, r.PathValue("id"))
+		if !ok {
+			return
+		}
+		b, err := os.ReadFile(filepath.Join(rdir, name))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			b = []byte("{}\n")
+		case err != nil:
+			httpError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeRawJSON(w, http.StatusOK, b)
+	}
+}
+
+// putSideFile saves side file name of a resume. Its content is up to the
+// editor; it only has to be a JSON object.
+func (s *server) putSideFile(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
+		if err != nil {
+			httpError(w, http.StatusBadRequest, err)
+			return
+		}
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+			httpError(w, http.StatusBadRequest, fmt.Errorf("%s needs a JSON object", name))
+			return
+		}
+		s.writeResumeFile(w, r, name, raw)
+	}
 }
 
 func (s *server) renameResume(w http.ResponseWriter, r *http.Request) {
@@ -750,6 +834,14 @@ func (s *server) deleteVersion(w http.ResponseWriter, r *http.Request) {
 	if err := os.Remove(p); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
+	}
+	// The exports written by sync go with their version.
+	base := strings.TrimSuffix(p, ".json")
+	for _, ext := range exportExts {
+		if err := os.Remove(base + ext); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			httpError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

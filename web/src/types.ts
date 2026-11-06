@@ -3,6 +3,9 @@
 // server/markdown.go (Word and Markdown exports).
 //
 // Inline text fields accept **bold**, *italic*, ***bold italic*** and [label](url).
+//
+// `hidden: true` on a section, entry, subheading or column keeps it in the
+// resume but leaves it off the page and out of every export.
 
 export interface Contact {
   id: string
@@ -19,6 +22,7 @@ export interface Basics {
 export interface Entry {
   id: string
   type: 'entry'
+  hidden?: boolean
   title: string
   date: string
   subtitle: string
@@ -30,6 +34,7 @@ export interface Entry {
 export interface Label {
   id: string
   type: 'label'
+  hidden?: boolean
   text: string
 }
 
@@ -38,6 +43,7 @@ export type EntryItem = Entry | Label
 export interface TextSection {
   id: string
   kind: 'text'
+  hidden?: boolean
   title: string
   paragraphs: string[]
 }
@@ -45,6 +51,7 @@ export interface TextSection {
 export interface EntriesSection {
   id: string
   kind: 'entries'
+  hidden?: boolean
   title: string
   uppercaseTitles: boolean
   items: EntryItem[]
@@ -52,6 +59,7 @@ export interface EntriesSection {
 
 export interface Column {
   id: string
+  hidden?: boolean
   title: string
   lines: string[]
 }
@@ -59,6 +67,7 @@ export interface Column {
 export interface ColumnsSection {
   id: string
   kind: 'columns'
+  hidden?: boolean
   title: string
   /** table: columns under one heading; sections: each column is its own section. */
   variant: 'table' | 'sections'
@@ -84,7 +93,45 @@ export interface ResumeDoc {
   style: Style
 }
 
+// Side documents: kept in the resume's folder, never printed or exported.
+
+/** contact.json: personal details for filling in applications. */
+export interface ContactInfo {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  /** Street lines, one per line. */
+  address: string
+  city: string
+  region: string
+  postalCode: string
+  country: string
+  notes: string
+}
+
+/** The supervisor at one job. */
+export interface Supervisor {
+  /** The resume Entry this belongs to. */
+  entryId: string
+  /**
+   * The entry's title and organization as last seen, so the file reads on its
+   * own and a supervisor whose entry was deleted still says which job it was.
+   */
+  job: string
+  name: string
+  position: string
+  email: string
+  phone: string
+}
+
+/** supervisors.json */
+export interface SupervisorsDoc {
+  supervisors: Supervisor[]
+}
+
 export interface Check {
+  group: 'Parsers' | 'Screen readers' | 'Links'
   level: 'ok' | 'info' | 'warn' | 'error'
   title: string
   detail?: string
@@ -136,4 +183,10 @@ export interface Version {
   label: string
   /** RFC 3339 */
   created: string
+}
+
+/** What syncing a resume's files did; paths are relative to the resume folder. */
+export interface SyncResult {
+  written: string[]
+  failed: { file: string; error: string }[]
 }

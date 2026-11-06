@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
+import { useExpandOnReveal } from '../reveal'
 import type { Section } from '../types'
 import ColumnsEditor from './ColumnsEditor.vue'
 import EntriesEditor from './EntriesEditor.vue'
 import StringList from './StringList.vue'
+import VisibilityToggle from './VisibilityToggle.vue'
 
 const section = defineModel<Section>({ required: true })
+const { path } = defineProps<{ /** Field path of the section, e.g. "sections.2". */ path: string }>()
 const emit = defineEmits<{ remove: [] }>()
 
 const open = shallowRef(false)
+useExpandOnReveal(
+  () => path,
+  () => (open.value = true),
+)
 
 const KIND_LABELS = { text: 'Paragraphs', entries: 'Entries', columns: 'Columns' } as const
 
@@ -30,7 +37,7 @@ const count = computed(() => {
 </script>
 
 <template>
-  <section class="section" :class="{ open }">
+  <section class="section" :class="{ open, 'is-hidden': section.hidden }">
     <header class="section-head">
       <span class="handle h-section" title="Drag to reorder" aria-hidden="true">⠿</span>
       <button class="toggle" type="button" :aria-expanded="open" @click="open = !open">
@@ -38,6 +45,7 @@ const count = computed(() => {
         <span class="title">{{ heading }}</span>
         <span class="meta">{{ KIND_LABELS[section.kind] }} · {{ count }}</span>
       </button>
+      <VisibilityToggle v-model="section.hidden" name="section" />
       <button class="icon-btn danger" type="button" title="Delete section" @click="emit('remove')">×</button>
     </header>
 
@@ -47,6 +55,7 @@ const count = computed(() => {
           <span class="field-label">Section heading</span>
           <input
             v-model="section.title"
+            :data-path="`${path}.title`"
             class="input"
             :placeholder="section.kind === 'columns' && section.variant === 'sections' ? 'None (each column has its own)' : 'Heading'"
           />
@@ -64,9 +73,9 @@ const count = computed(() => {
         </label>
       </div>
 
-      <StringList v-if="section.kind === 'text'" v-model="section.paragraphs" add-label="Paragraph" rich />
-      <EntriesEditor v-else-if="section.kind === 'entries'" v-model="section.items" />
-      <ColumnsEditor v-else v-model="section.columns" />
+      <StringList v-if="section.kind === 'text'" v-model="section.paragraphs" :path="`${path}.paragraphs`" add-label="Paragraph" rich />
+      <EntriesEditor v-else-if="section.kind === 'entries'" v-model="section.items" :path="`${path}.items`" />
+      <ColumnsEditor v-else v-model="section.columns" :path="`${path}.columns`" />
     </div>
   </section>
 </template>
@@ -123,6 +132,10 @@ const count = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.is-hidden > .section-head .toggle {
+  opacity: 0.45;
 }
 
 .meta {

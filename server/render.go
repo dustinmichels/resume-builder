@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -21,6 +22,9 @@ type rendered struct {
 	SVGs     []string
 	Warnings []string
 	Fields   []FieldBox // set with the SVGs
+	// UAErrors are Typst's PDF/UA-1 (accessible PDF) violations. When there
+	// are any, the PDF is compiled again without the standard so it still renders.
+	UAErrors []string
 }
 
 func (r *rendered) Close() { os.RemoveAll(r.dir) }
@@ -85,7 +89,11 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 		svgErr <- nil
 		fields <- fieldsResult{}
 	}
-	stderr, pdfErr := typst(ctx, dir, "resume.pdf")
+	stderr, pdfErr := typst(ctx, dir, "resume.pdf", "--pdf-standard", "ua-1")
+	if ce, ok := errors.AsType[*compileError](pdfErr); ok && strings.Contains(ce.Output, uaErrorTag) {
+		out.UAErrors = slices.DeleteFunc(strings.Split(ce.Output, "\n"), func(l string) bool { return !strings.Contains(l, uaErrorTag) })
+		stderr, pdfErr = typst(ctx, dir, "resume.pdf")
+	}
 	f := <-fields
 	if err := errors.Join(pdfErr, <-svgErr); err != nil {
 		out.Close()
@@ -117,10 +125,14 @@ func render(ctx context.Context, templatePath string, raw []byte, svg bool) (*re
 	return out, nil
 }
 
+// uaErrorTag starts Typst's PDF/UA-1 violation messages.
+const uaErrorTag = "PDF/UA-1 error"
+
 // typst compiles dir/resume.typ to dir/output. It runs inside dir so
 // diagnostics name files relative to the template ("resume.typ:14:18: …").
-func typst(ctx context.Context, dir, output string) (string, error) {
-	cmd := exec.CommandContext(ctx, "typst", "compile", "--diagnostic-format", "short", "resume.typ", output)
+func typst(ctx context.Context, dir, output string, flags ...string) (string, error) {
+	args := append([]string{"compile", "--diagnostic-format", "short"}, flags...)
+	cmd := exec.CommandContext(ctx, "typst", append(args, "resume.typ", output)...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -148,13 +160,14 @@ func diagnostics(stderr string) []string {
 }
 
 // attachedJSON is the resume.json attached to the PDF: the content as it reads
-// on the page, without editor-only fields (ids, style, layout flags) or blank
-// values the template skips.
+// on the page, without editor-only fields (ids, style, layout flags), hidden
+// sections, items and columns, or blank values the template skips.
 func attachedJSON(raw []byte) ([]byte, error) {
 	var doc Doc
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, err
 	}
+	doc.dropHidden()
 	type contact struct {
 		Text string `json:"text"`
 		URL  string `json:"url,omitempty"`

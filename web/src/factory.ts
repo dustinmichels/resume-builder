@@ -1,4 +1,4 @@
-import type { Column, Contact, Entry, Label, Section, SectionKind } from './types'
+import type { Column, Contact, ContactInfo, Entry, Label, Section, SectionKind, Supervisor } from './types'
 
 export const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`
 
@@ -29,6 +29,28 @@ export function newSection(kind: SectionKind): Section {
       return { id, kind, title: '', variant: 'table', columns: [newColumn(), newColumn()] }
   }
 }
+
+export const newContactInfo = (): ContactInfo => ({
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  address: '',
+  city: '',
+  region: '',
+  postalCode: '',
+  country: '',
+  notes: '',
+})
+
+export const newSupervisor = (entryId: string, job: string): Supervisor => ({
+  entryId,
+  job,
+  name: '',
+  position: '',
+  email: '',
+  phone: '',
+})
 
 /** Deep copy with fresh ids, for "Duplicate". */
 export function cloneEntry(entry: Entry): Entry {

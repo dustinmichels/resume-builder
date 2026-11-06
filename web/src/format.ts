@@ -1,3 +1,6 @@
+import { richToText } from './rich'
+import type { Entry } from './types'
+
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 
@@ -21,3 +24,10 @@ export function formatRelative(iso: string, now = Date.now()) {
   }
   return 'just now'
 }
+
+/** "Software engineer, The Collaboratory": an entry's title and subtitle as plain text. */
+export const jobLabel = (entry: Entry) =>
+  [entry.title, entry.subtitle]
+    .map((s) => richToText(s).replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(', ')

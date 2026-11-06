@@ -5,10 +5,17 @@ import RichText from './RichText.vue'
 
 const items = defineModel<string[]>({ required: true })
 const {
+  path,
   addLabel = 'Add',
   rich = false,
   placeholder = '',
-} = defineProps<{ addLabel?: string; rich?: boolean; placeholder?: string }>()
+} = defineProps<{
+  /** Field path of the array; rows are tagged "<path>.<i>". */
+  path: string
+  addLabel?: string
+  rich?: boolean
+  placeholder?: string
+}>()
 
 const rows = useTemplateRef<HTMLElement>('rows')
 // Rich rows by index, for moving the caret between them.
@@ -51,11 +58,12 @@ async function removeEmpty(index: number) {
             v-if="rich"
             :ref="(c) => (editors[i] = c as InstanceType<typeof RichText> | null)"
             v-model="items[i]"
+            :data-path="`${path}.${i}`"
             :placeholder="placeholder"
             @enter="insertAfter(i)"
             @backspace-empty="removeEmpty(i)"
           />
-          <input v-else v-model="items[i]" class="input" :placeholder="placeholder" />
+          <input v-else v-model="items[i]" :data-path="`${path}.${i}`" class="input" :placeholder="placeholder" />
           <button class="icon-btn danger" type="button" title="Remove" :aria-label="`Remove item ${i + 1}`" @click="remove(i)">
             ×
           </button>

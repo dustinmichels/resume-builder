@@ -25,6 +25,8 @@ type server struct {
 
 	mu      sync.RWMutex
 	dataDir string // "" until the user chooses a folder
+
+	links *linkChecker
 }
 
 func main() {
@@ -59,7 +61,8 @@ func newServer(templatePath, configPath, legacyPath string) (*server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &server{templatePath: templatePath, configPath: configPath, legacyPath: legacyPath, dataDir: c.DataDir}, nil
+	return &server{templatePath: templatePath, configPath: configPath, legacyPath: legacyPath, dataDir: c.DataDir,
+		links: newLinkChecker()}, nil
 }
 
 // newMux routes the API, plus the built frontend in static if it exists.
@@ -78,7 +81,14 @@ func newMux(s *server, static string) *http.ServeMux {
 	mux.HandleFunc("GET /api/resumes/{id}/versions/{vid}", s.getVersion)
 	mux.HandleFunc("POST /api/resumes/{id}/versions/{vid}/restore", s.restoreVersion)
 	mux.HandleFunc("DELETE /api/resumes/{id}/versions/{vid}", s.deleteVersion)
+	mux.HandleFunc("POST /api/resumes/{id}/sync", s.syncFiles)
+	mux.HandleFunc("POST /api/resumes/{id}/reveal", s.reveal)
+	for path, file := range sideFiles {
+		mux.HandleFunc("GET /api/resumes/{id}/"+path, s.getSideFile(file))
+		mux.HandleFunc("PUT /api/resumes/{id}/"+path, s.putSideFile(file))
+	}
 	mux.HandleFunc("POST /api/preview", s.preview)
+	mux.HandleFunc("POST /api/links", s.checkLinks)
 	mux.HandleFunc("POST /api/pdf", s.pdf)
 	mux.HandleFunc("POST /api/docx", docx)
 	mux.HandleFunc("POST /api/md", markdown)
@@ -116,12 +126,35 @@ func (s *server) preview(w http.ResponseWriter, r *http.Request) {
 	resp := previewResponse{Pages: out.SVGs, Warnings: out.Warnings, Fields: out.Fields, Markdown: string(markdownResume(doc))}
 	text, layout, err := extractText(r.Context(), out.PDFPath)
 	if err != nil {
-		resp.Checks = []Check{{Level: "warn", Title: "Text layer not checked", Detail: err.Error()}}
+		resp.Checks = []Check{{Group: groupParsers, Level: "warn", Title: "Text layer not checked", Detail: err.Error()}}
 	} else {
 		resp.Text, resp.LayoutText = text, layout
-		resp.Checks = analyze(doc, text, len(out.SVGs))
+		resp.Checks = parserChecks(doc, text, len(out.SVGs))
 	}
+	var facts *pdfFacts
+	if f, err := inspectPDF(r.Context(), out.PDFPath); err != nil {
+		resp.Checks = append(resp.Checks, Check{Group: groupScreenReaders, Level: "warn", Title: "Tags and links not checked", Detail: err.Error()})
+	} else {
+		facts = &f
+	}
+	resp.Checks = append(resp.Checks, accessibilityChecks(doc, out.UAErrors, facts)...)
+	resp.Checks = append(resp.Checks, linkChecks(doc, facts)...)
 	writeJSON(w, resp)
+}
+
+// checkLinks requests the resume's web links. It's separate from preview so
+// slow sites never hold up rendering.
+func (s *server) checkLinks(w http.ResponseWriter, r *http.Request) {
+	_, doc, err := readDoc(r)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	checks, err := s.links.check(r.Context(), doc)
+	if err != nil {
+		return // the editor moved on
+	}
+	writeJSON(w, checks)
 }
 
 var unsafeFilename = regexp.MustCompile(`[^\w .-]+`)
@@ -179,21 +212,31 @@ func attachment(w http.ResponseWriter, doc Doc, contentType, ext string) {
 }
 
 // readDoc reads a resume document from the request body, returning the raw
-// JSON and its parsed form. The shape check keeps obviously wrong payloads
-// from overwriting the saved resume.
+// JSON and its parsed form.
 func readDoc(r *http.Request) ([]byte, Doc, error) {
-	var doc Doc
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
+	if err != nil {
+		return nil, Doc{}, err
+	}
+	doc, err := decodeDoc(raw)
 	if err != nil {
 		return nil, doc, err
 	}
+	return raw, doc, nil
+}
+
+// decodeDoc parses a resume document, without its hidden parts. The shape
+// check keeps obviously wrong payloads from overwriting the saved resume.
+func decodeDoc(raw []byte) (Doc, error) {
+	var doc Doc
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, doc, fmt.Errorf("invalid resume JSON: %w", err)
+		return doc, fmt.Errorf("invalid resume JSON: %w", err)
 	}
 	if doc.Basics == nil || doc.Sections == nil || doc.Style == nil {
-		return nil, doc, errors.New("resume JSON needs basics, sections and style")
+		return doc, errors.New("resume JSON needs basics, sections and style")
 	}
-	return raw, doc, nil
+	doc.dropHidden()
+	return doc, nil
 }
 
 func renderError(w http.ResponseWriter, err error) {

@@ -116,12 +116,18 @@ export function useLibrary() {
     await refresh()
   }
 
+  /** The copy gets the current side files, so pending edits to them are saved first. */
   async function copyVersion(version: Version) {
     if (!currentId.value) return
     const name = `${currentId.value} – ${version.label || formatDateTime(version.created)}`
-    const id = await api.createResume(name, { resume: currentId.value, version: version.id })
+    const id = await resume.withSaved((from) => api.createResume(name, { resume: from, version: version.id }))
     await refresh()
     await switchTo(id)
+  }
+
+  /** Pending edits are saved first so resume.md and resume.pdf match the editor. */
+  function syncFiles() {
+    return resume.withSaved((id) => api.syncFiles(id))
   }
 
   init()
@@ -142,5 +148,6 @@ export function useLibrary() {
     saveVersion,
     restoreVersion,
     copyVersion,
+    syncFiles,
   }
 }
