@@ -1,0 +1,26 @@
+[tasks.api]
+description = "Go API server (http://127.0.0.1:8787)"
+run = "go run ./server"
+
+[tasks.web]
+description = "Vite dev server (http://localhost:5180)"
+dir = "web"
+run = "bun install && bun run dev"
+
+[tasks.dev]
+description = "Run the API and web dev servers together"
+depends = ["api", "web"]
+
+[tasks.build]
+description = "Build the frontend into web/dist"
+dir = "web"
+run = "bun install && bun run build"
+
+[tasks.serve]
+description = "Build, then serve app + API from one process (http://127.0.0.1:8787)"
+depends = ["build"]
+run = "go run ./server"
+
+[tasks.test]
+description = "Server tests"
+run = "go test ./server/"
