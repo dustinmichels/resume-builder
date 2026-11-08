@@ -260,6 +260,11 @@ export interface Version {
   created: string
 }
 
+/** A version just saved, with the copies of its documents that could not be written. */
+export interface SavedVersion extends Version {
+  failed: SyncResult['failed']
+}
+
 /** What syncing a resume's files did; paths are relative to the resume folder. */
 export interface SyncResult {
   written: string[]

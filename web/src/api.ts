@@ -6,6 +6,7 @@ import type {
   DocSummary,
   Preview,
   ResumeDoc,
+  SavedVersion,
   Settings,
   SupervisorsDoc,
   SyncResult,
@@ -99,8 +100,8 @@ export const api = {
   async listVersions(id: string): Promise<Version[]> {
     return (await request(`${resumePath(id)}/versions`)).json()
   },
-  /** Snapshots the resume as last saved; save pending edits first. */
-  async saveVersion(id: string, label: string): Promise<Version> {
+  /** Snapshots the resume, its side files and cover letters as last saved, with their copies; save pending edits first. */
+  async saveVersion(id: string, label: string): Promise<SavedVersion> {
     return (await request(`${resumePath(id)}/versions`, send('POST', JSON.stringify({ label })))).json()
   },
   async getVersion(id: string, version: string): Promise<ResumeDoc> {

@@ -49,8 +49,9 @@ Everything lives in plain files in the data folder, so it can be backed up, sync
       MPO Data Analyst.md, .docx, .pdf        its Markdown, Word and PDF copies, written by Sync files
     versions/
       20261106-153000 Sent to Acme/           a saved version: timestamp, then its label
-        resume.json                           the resume as it was saved
-        resume.md, .docx, .pdf                its Markdown, Word and PDF copies, written by Sync files
+        resume.json, additional/, cover-letters/   the resume, its details and letters as they were saved
+        resume.md, .docx, .pdf                Markdown, Word and PDF copies of the resume and each letter,
+                                              written when the version is saved
   Designer CV/
     resume.json
   .trash/
@@ -59,23 +60,25 @@ Everything lives in plain files in the data folder, so it can be backed up, sync
 ```
 
 Each folder holding a `resume.json` is a resume; its folder name is the name shown in the editor, so renaming one
-renames the folder. Saving a version snapshots the resume as last saved; restoring a version first saves the current
-resume as a version labelled `Before restoring …`, so a restore can always be undone. Deleting a resume moves its
+renames the folder. Saving a version snapshots the resume, its `additional/` details and its cover letters as last
+saved, and writes Markdown, Word and PDF copies of the resume and each letter inside it (a copy that fails to render
+is reported, the snapshot is kept, and Sync files retries it). Restoring a version replaces only `resume.json`; it first
+saves the current state as a version labelled `Before restoring …`, so a restore can always be undone. Deleting a resume moves its
 folder, versions included, into `.trash`; empty that folder by hand when you no longer need them. The folder button in
 the toolbar opens the current resume's folder in Finder (Explorer on Windows, the default file manager elsewhere).
 
-**Sync files** (next to the save status in the toolbar) writes a Markdown, a Word and a PDF copy beside `resume.json`,
-each version and each cover letter, named after the JSON file. It saves pending edits first and skips copies already up
+**Sync files** (next to the save status in the toolbar) writes a Markdown, a Word and a PDF copy beside `resume.json`
+and each cover letter, and the same inside each version, named after the JSON file. It saves pending edits first and skips copies already up
 to date: a Markdown or Word file is rewritten when its content changes, a PDF when it is older than its JSON or the
-template (for a letter, also its resume's `resume.json`, whose name and style it shows). A file that fails to render is reported
+template (for a letter, also the `resume.json` beside its folder, whose name and style it shows). A file that fails to render is reported
 and the rest still sync. Deleting a version or letter deletes its copies. The button reads **Files synced** until the
 resume next changes.
 
 `additional/contact.json` and `additional/supervisors.json` hold details for job applications that don't belong on the page: your name,
 email, phone and mailing address, and for each entry a supervisor's name, position, email, phone, mailing address and whether they may be contacted. They are
 written only once you fill something in, autosave with the resume, and are never rendered or exported. They move,
-duplicate and go to `.trash` with their resume, but versions don't include them: restoring a version leaves them as
-they are, and a copy of a version gets the current ones. Supervisors are matched to entries by the entry's `id`; each
+duplicate, go to `.trash` and are saved in versions with their resume. Restoring a version leaves them as they are; a
+copy of a version gets the version's (or, for a version with neither these nor letters, the current ones). Supervisors are matched to entries by the entry's `id`; each
 also records the entry's title and organization (`job`), so one whose entry you delete is still listed, under
 **No longer in the resume**, until you remove it.
 
@@ -90,13 +93,14 @@ your choice beneath it (a new letter starts with the resume's last headline part
 with the resume's section square hung in the margin, then the greeting, paragraphs, subheadings and bullet lists, and
 an optional closing above your name. A paragraph right after another runs on with an indented first line; one after a
 heading or list starts flush. The name, accent color, heading font and margin come from the resume, so changing them
-there restyles its letters; the body font and size are the letter's own (Libertinus Serif, which Typst bundles, by
-default). The template reads `data.json` as `{basics, style, letter}`.
+there restyles its letters; the bottom margin is half the resume's, as in the sample. The body font and size are the
+letter's own (Libertinus Serif, which Typst bundles, by default). The template reads `data.json` as
+`{basics, style, letter}`.
 
 Letters autosave with the resume and are clickable on the page (Enter in a paragraph starts the next one). Their
 checks are the resume's Parsers, Screen readers and Links checks, without the resume-only ones (dot leaders, entry
-dates, email); a letter longer than one page gets a note. They move, duplicate and go to `.trash` with their resume;
-versions don't include them. Deleting a letter moves it alone to `.trash`.
+dates, email); a letter longer than one page gets a note. They move, duplicate, go to `.trash` and are saved in
+versions with their resume, like the details above. Deleting a letter moves it alone to `.trash`.
 
 ## Readable by people and machines
 

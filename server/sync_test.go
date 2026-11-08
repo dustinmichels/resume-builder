@@ -15,8 +15,34 @@ func TestSyncFiles(t *testing.T) {
 	}
 	l := newLibrary(t)
 	rdir := filepath.Join(l.choose(t), "Resume")
-	var v version
+	l.call(t, "POST", "/api/resumes/Resume/letters", `{"name":"Acme","letter":`+testLetter+`}`, 201)
+	l.call(t, "PUT", "/api/resumes/Resume/contact", `{"email":"me@example.com"}`, 204)
+
+	// Saving a version snapshots the resume, its side files and its letters,
+	// and writes the exports of the resume and letters inside it.
+	var v struct {
+		version
+		Failed []syncFailure
+	}
 	decodeInto(t, l.call(t, "POST", "/api/resumes/Resume/versions", `{"label":"Sent"}`, 201), &v)
+	if len(v.Failed) != 0 {
+		t.Fatalf("version exports failed: %+v", v.Failed)
+	}
+	vdir := filepath.Join(rdir, versionsDir, v.ID)
+	for name, prefix := range map[string]string{
+		resumeFile: "{", sideFiles["contact"]: "{", "cover-letters/Acme.json": "{",
+		"resume.md": "# ", "resume.pdf": "%PDF-", "resume.docx": "PK",
+		"cover-letters/Acme.md": "", "cover-letters/Acme.pdf": "%PDF-", "cover-letters/Acme.docx": "PK",
+	} {
+		if b, err := os.ReadFile(filepath.Join(vdir, name)); err != nil || !strings.HasPrefix(string(b), prefix) {
+			t.Fatalf("version %s: %v", name, err)
+		}
+	}
+	l.call(t, "PUT", "/api/resumes/Resume/letters/Acme", strings.Replace(testLetter, "Dear Acme", "Dear Beta", 1), 204)
+	if md, _ := os.ReadFile(filepath.Join(vdir, "cover-letters/Acme.md")); !strings.Contains(string(md), "Dear Acme") {
+		t.Fatalf("editing the letter changed its version:\n%s", md)
+	}
+
 	broken := filepath.Join(rdir, versionsDir, "broken")
 	if err := os.Mkdir(broken, 0o755); err != nil {
 		t.Fatal(err)
@@ -32,34 +58,24 @@ func TestSyncFiles(t *testing.T) {
 		return res
 	}
 
-	vbase := "versions/" + v.ID + "/resume"
 	res := sync()
-	if want := []string{"resume.docx", "resume.md", "resume.pdf", vbase + ".docx", vbase + ".md", vbase + ".pdf"}; !slices.Equal(res.Written, want) {
+	want := []string{"cover-letters/Acme.docx", "cover-letters/Acme.md", "cover-letters/Acme.pdf", "resume.docx", "resume.md", "resume.pdf"}
+	if !slices.Equal(res.Written, want) {
 		t.Fatalf("first sync wrote %q, want %q", res.Written, want)
 	}
 	if len(res.Failed) != 1 || res.Failed[0].File != "versions/broken/resume.json" {
 		t.Fatalf("failures = %+v", res.Failed)
-	}
-	md, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID, "resume.md"))
-	if err != nil || !strings.HasPrefix(string(md), "# ") {
-		t.Fatalf("version markdown: %v\n%s", err, md)
-	}
-	pdf, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID, "resume.pdf"))
-	if err != nil || !strings.HasPrefix(string(pdf), "%PDF-") {
-		t.Fatalf("version pdf: %v", err)
-	}
-	docx, err := os.ReadFile(filepath.Join(rdir, versionsDir, v.ID, "resume.docx"))
-	if err != nil || !strings.HasPrefix(string(docx), "PK") {
-		t.Fatalf("version docx: %v", err)
 	}
 
 	if res := sync(); len(res.Written) != 0 {
 		t.Fatalf("up-to-date sync wrote %q", res.Written)
 	}
 
+	// A version's letters show the version's resume, so editing the current
+	// resume leaves the version's exports alone.
 	l.call(t, "PUT", "/api/resumes/Resume", exportDoc, 204)
-	if res := sync(); !slices.Equal(res.Written, []string{"resume.docx", "resume.md", "resume.pdf"}) {
-		t.Fatalf("sync after edit wrote %q", res.Written)
+	if res := sync(); !slices.Equal(res.Written, want) {
+		t.Fatalf("sync after edit wrote %q, want %q", res.Written, want)
 	}
 
 	l.call(t, "DELETE", "/api/resumes/Resume/versions/"+strings.ReplaceAll(v.ID, " ", "%20"), "", 204)

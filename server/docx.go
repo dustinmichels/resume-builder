@@ -30,6 +30,7 @@ type docxWriter struct {
 	accent string
 	body   strings.Builder
 	links  []string // hyperlink targets; link i has relationship id rIdL<i+1>
+	bottom float64  // bottom page margin in inches; st.Margin sets the other three
 }
 
 type runProps struct {
@@ -61,6 +62,7 @@ func newDocxWriter(st Style) *docxWriter {
 	if d.st.Margin <= 0 {
 		d.st.Margin = 0.6
 	}
+	d.bottom = d.st.Margin
 	if d.st.Font == "" {
 		d.st.Font = "Helvetica"
 	}
@@ -78,7 +80,7 @@ func (d *docxWriter) pack(title, author, styles, numbering string) ([]byte, erro
 		{"word/_rels/document.xml.rels", d.documentRels()},
 		{"word/styles.xml", styles},
 		{"word/numbering.xml", numbering},
-		{"word/document.xml", fmt.Sprintf(documentXML, d.body.String(), d.twips(d.st.Margin*72))},
+		{"word/document.xml", fmt.Sprintf(documentXML, d.body.String(), d.twips(d.st.Margin*72), d.twips(d.bottom*72))},
 	}
 	for _, p := range parts {
 		f, err := z.Create(p.name)
@@ -344,9 +346,9 @@ const coreXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 const documentRelsXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>%s</Relationships>`
 
-// documentXML takes the body paragraphs and the page margin in twips.
+// documentXML takes the body paragraphs, the page margin and the bottom margin in twips.
 const documentXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>%s<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="%[2]d" w:right="%[2]d" w:bottom="%[2]d" w:left="%[2]d" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>%s<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="%[2]d" w:right="%[2]d" w:bottom="%[3]d" w:left="%[2]d" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`
 
 // stylesXML takes: font, size, ink, paragraph spacing; title spacing, accent,
 // size; heading 1 before, after, accent, size; heading 2 leader, tab position,

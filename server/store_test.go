@@ -299,13 +299,32 @@ func TestSideFiles(t *testing.T) {
 		t.Fatalf("saving contact changed the resume:\n%s", got)
 	}
 
-	// Duplicates, including copies of a version, take the side files along.
+	// Duplicates take the side files along; a copy of a version gets the
+	// version's, or the current ones for a version without any.
 	var v version
 	decodeInto(t, l.call(t, "POST", "/api/resumes/Resume/versions", `{"label":"v"}`, 201), &v)
-	for _, body := range []map[string]string{{"name": "Copy", "from": "Resume"}, {"name": "Old", "from": "Resume", "version": v.ID}} {
-		id := l.create(t, body)
-		if got := l.call(t, "GET", "/api/resumes/"+id+"/contact", "", 200); !strings.Contains(string(got), "me@example.com") {
-			t.Fatalf("%s contact = %q", id, got)
+	if _, err := os.Stat(filepath.Join(dir, "Resume", versionsDir, v.ID, sideFiles["contact"])); err != nil {
+		t.Fatalf("version lacks contact.json: %v", err)
+	}
+	legacy := filepath.Join(dir, "Resume", versionsDir, "20200101-000000 legacy")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, resumeFile), starterJSON, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l.call(t, "PUT", "/api/resumes/Resume/contact", `{"email":"new@example.com"}`, 204)
+	for _, c := range []struct {
+		body  map[string]string
+		email string
+	}{
+		{map[string]string{"name": "Copy", "from": "Resume"}, "new@example.com"},
+		{map[string]string{"name": "Old", "from": "Resume", "version": v.ID}, "me@example.com"},
+		{map[string]string{"name": "Legacy", "from": "Resume", "version": "20200101-000000 legacy"}, "new@example.com"},
+	} {
+		id := l.create(t, c.body)
+		if got := l.call(t, "GET", "/api/resumes/"+id+"/contact", "", 200); !strings.Contains(string(got), c.email) {
+			t.Fatalf("%s contact = %q, want %s", id, got, c.email)
 		}
 		if got := l.call(t, "GET", "/api/resumes/"+id+"/supervisors", "", 200); string(got) != "{}\n" {
 			t.Fatalf("%s supervisors = %q", id, got)

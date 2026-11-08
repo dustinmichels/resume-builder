@@ -116,7 +116,7 @@ export function useLibrary() {
     await refresh()
   }
 
-  /** The copy gets the current side files, so pending edits to them are saved first. */
+  /** A version without side files or letters gets the current ones, so pending edits to them are saved first. */
   async function copyVersion(version: Version) {
     if (!currentId.value) return
     const name = `${currentId.value} – ${version.label || formatDateTime(version.created)}`

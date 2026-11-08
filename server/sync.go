@@ -1,12 +1,12 @@
 package main
 
-// Exported copies kept beside a resume's documents: resume.json, every saved
-// version and every cover letter get a Markdown, a Word and a PDF file of the
-// same name,
+// Exported copies kept beside a resume's documents: resume.json, every cover
+// letter and the same in every saved version get a Markdown, a Word and a PDF
+// file of the same name,
 //
 //	<dataDir>/<resume name>/resume.md, resume.docx, resume.pdf
-//	<dataDir>/<resume name>/versions/<version id>/resume.md, resume.docx, resume.pdf
 //	<dataDir>/<resume name>/cover-letters/<letter name>.md, .docx, .pdf
+//	<dataDir>/<resume name>/versions/<version id>/resume.md, …, cover-letters/<letter name>.md, …
 
 import (
 	"bytes"
@@ -33,9 +33,9 @@ type syncResult struct {
 	Failed  []syncFailure `json:"failed"`
 }
 
-// syncFiles brings the Markdown, Word and PDF beside resume.json, each version and
-// each cover letter of a resume up to date. A document that fails to render
-// is reported and the rest still sync.
+// syncFiles brings the Markdown, Word and PDF beside resume.json and each
+// cover letter of a resume and of each of its versions up to date. A document
+// that fails to render is reported and the rest still sync.
 func (s *server) syncFiles(w http.ResponseWriter, r *http.Request) {
 	dir, unlock, ok := s.lockDir(w, false)
 	if !ok {
@@ -46,58 +46,71 @@ func (s *server) syncFiles(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	tpl, err := os.Stat(s.templatePath)
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, err)
-		return
-	}
 	versions, err := listVersions(rdir)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
-	letters, err := listLetters(rdir)
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, err)
-		return
-	}
-	docs := []string{resumeFile}
-	for _, v := range versions {
-		docs = append(docs, filepath.Join(versionsDir, v.ID, resumeFile))
-	}
-
 	res := syncResult{Written: []string{}, Failed: []syncFailure{}}
-	record := func(rel string, written []string, err error) {
-		base := filepath.ToSlash(strings.TrimSuffix(rel, ".json"))
+	s.exportFolder(r.Context(), rdir, "", &res)
+	for _, v := range versions {
+		s.exportVersion(r.Context(), rdir, v.ID, &res)
+	}
+	writeJSON(w, res)
+}
+
+// exportVersion brings the exports of version vid of the resume in rdir up to
+// date, adding them to res.
+func (s *server) exportVersion(ctx context.Context, rdir, vid string, res *syncResult) {
+	rel := filepath.Join(versionsDir, vid)
+	s.exportFolder(ctx, filepath.Join(rdir, rel), rel, res)
+}
+
+// exportFolder brings the exports beside resume.json and each cover letter in
+// folder up to date, adding them to res. folder is a resume's, or the version
+// at rel inside it; res holds paths relative to the resume's folder.
+func (s *server) exportFolder(ctx context.Context, folder, rel string, res *syncResult) {
+	record := func(name string, written []string, err error) {
+		p := filepath.ToSlash(filepath.Join(rel, name))
+		base := strings.TrimSuffix(p, ".json")
 		for _, ext := range written {
 			res.Written = append(res.Written, base+ext)
 		}
 		if err != nil {
-			res.Failed = append(res.Failed, syncFailure{File: filepath.ToSlash(rel), Error: err.Error()})
+			res.Failed = append(res.Failed, syncFailure{File: p, Error: err.Error()})
 		}
 	}
-	for _, rel := range docs {
-		written, err := s.syncResume(r.Context(), filepath.Join(rdir, rel), tpl.ModTime())
-		record(rel, written, err)
+	resumePath := filepath.Join(folder, resumeFile)
+	if tpl, err := os.Stat(s.templatePath); err != nil {
+		record(resumeFile, nil, err)
+	} else {
+		written, err := s.syncResume(ctx, resumePath, tpl.ModTime())
+		record(resumeFile, written, err)
 	}
-	if len(letters) > 0 {
-		// A letter's PDF shows its resume's name and style, so it is redrawn
-		// when the resume or the letter template changes too.
-		resumeRaw, rerr := os.ReadFile(filepath.Join(rdir, resumeFile))
-		rfi, ferr := os.Stat(filepath.Join(rdir, resumeFile))
-		lfi, lerr := os.Stat(s.letterTemplatePath)
-		depsErr := errors.Join(rerr, ferr, lerr)
-		for _, l := range letters {
-			rel := filepath.Join(lettersDir, l.ID+".json")
-			if depsErr != nil {
-				record(rel, nil, depsErr)
-				continue
-			}
-			written, err := s.syncLetter(r.Context(), filepath.Join(rdir, rel), resumeRaw, latest(rfi.ModTime(), lfi.ModTime()))
-			record(rel, written, err)
+
+	letters, err := listLetters(folder)
+	if err != nil {
+		record(lettersDir, nil, err)
+		return
+	}
+	if len(letters) == 0 {
+		return
+	}
+	// A letter's PDF shows its resume's name and style, so it is redrawn
+	// when the resume or the letter template changes too.
+	resumeRaw, rerr := os.ReadFile(resumePath)
+	rfi, ferr := os.Stat(resumePath)
+	lfi, lerr := os.Stat(s.letterTemplatePath)
+	depsErr := errors.Join(rerr, ferr, lerr)
+	for _, l := range letters {
+		name := filepath.Join(lettersDir, l.ID+".json")
+		if depsErr != nil {
+			record(name, nil, depsErr)
+			continue
 		}
+		written, err := s.syncLetter(ctx, filepath.Join(folder, name), resumeRaw, latest(rfi.ModTime(), lfi.ModTime()))
+		record(name, written, err)
 	}
-	writeJSON(w, res)
 }
 
 func latest(a, b time.Time) time.Time {

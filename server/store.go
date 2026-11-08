@@ -6,8 +6,8 @@ package main
 //	<dataDir>/<resume name>/resume.json
 //	<dataDir>/<resume name>/additional/contact.json, supervisors.json   (side files, optional)
 //	<dataDir>/<resume name>/cover-letters/<letter name>.json   (see letters.go)
-//	<dataDir>/<resume name>/versions/<YYYYMMDD-HHMMSS>[ <label>]/resume.json
-//	<dataDir>/<resume name>/[versions/<version id>/|cover-letters/]<name>.md, <name>.pdf     (exports beside each .json, see sync.go)
+//	<dataDir>/<resume name>/versions/<YYYYMMDD-HHMMSS>[ <label>]/resume.json, additional/…, cover-letters/…   (a snapshot of the above)
+//	<dataDir>/<resume name>/[versions/<version id>/][cover-letters/]<name>.md, .docx, .pdf     (exports beside each .json, see sync.go)
 //	<dataDir>/.trash/<resume name> <YYYYMMDD-HHMMSS>/
 //	<dataDir>/.trash/<resume name> – <letter name> <YYYYMMDD-HHMMSS>.json
 
@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,7 +46,7 @@ const (
 
 // sideFiles are the documents kept in a resume's additional folder, by the
 // URL name they are served under. They are never rendered; they move, go to
-// the trash and get duplicated with the resume, but versions don't include them.
+// the trash, get duplicated and are versioned with the resume.
 var sideFiles = map[string]string{
 	"contact":     filepath.Join(additionalDir, "contact.json"),
 	"supervisors": filepath.Join(additionalDir, "supervisors.json"),
@@ -249,25 +250,53 @@ func listResumes(dir string) ([]summary, error) {
 	return out, nil
 }
 
-// newResume creates resume folder id in dir holding files (resume.json and
-// any side files).
-func newResume(dir, id string, files map[string][]byte) error {
-	rdir := filepath.Join(dir, id)
-	if err := os.Mkdir(rdir, 0o755); err != nil {
+// newFolder creates folder path holding files, keyed by their path in it
+// (resume.json and any side files and cover letters).
+func newFolder(path string, files map[string][]byte) error {
+	if err := os.Mkdir(path, 0o755); err != nil {
 		return err
 	}
 	for name, data := range files {
-		p := filepath.Join(rdir, name)
+		p := filepath.Join(path, name)
 		err := os.MkdirAll(filepath.Dir(p), 0o755)
 		if err == nil {
 			err = writeFileAtomic(p, data)
 		}
 		if err != nil {
-			os.RemoveAll(rdir)
+			os.RemoveAll(path)
 			return err
 		}
 	}
 	return nil
+}
+
+// snapshot reads the documents in folder (a resume's, or one of its
+// versions'): resume.json, the side files that exist and the cover letters,
+// keyed by their path in folder.
+func snapshot(folder string) (map[string][]byte, error) {
+	letters, err := listLetters(folder)
+	if err != nil {
+		return nil, err
+	}
+	names := []string{resumeFile}
+	for _, name := range sideFiles {
+		names = append(names, name)
+	}
+	for _, l := range letters {
+		names = append(names, filepath.Join(lettersDir, l.ID+".json"))
+	}
+	files := make(map[string][]byte, len(names))
+	for _, name := range names {
+		b, err := os.ReadFile(filepath.Join(folder, name))
+		if errors.Is(err, fs.ErrNotExist) && name != resumeFile {
+			continue // side files are written only once filled in
+		}
+		if err != nil {
+			return nil, err
+		}
+		files[name] = b
+	}
+	return files, nil
 }
 
 // seed gives a data folder without resumes its first one: the pre-library
@@ -287,7 +316,7 @@ func (s *server) seed(dir string) error {
 			return err
 		}
 	}
-	return newResume(dir, uniqueName(dir, "Resume", ""), map[string][]byte{resumeFile: data})
+	return newFolder(filepath.Join(dir, uniqueName(dir, "Resume", "")), map[string][]byte{resumeFile: data})
 }
 
 // parseVersion reads a version id: "<YYYYMMDD-HHMMSS>[-N][ <label>]".
@@ -346,10 +375,10 @@ func listVersions(rdir string) ([]version, error) {
 	return out, nil
 }
 
-// saveVersion snapshots the saved resume.json in rdir under label, in a folder
-// of its own.
+// saveVersion snapshots the saved documents in rdir (see snapshot) under
+// label, in a folder of its own. It writes no exports (see exportVersion).
 func saveVersion(rdir, label string, now time.Time) (version, error) {
-	data, err := os.ReadFile(filepath.Join(rdir, resumeFile))
+	files, err := snapshot(rdir)
 	if err != nil {
 		return version{}, err
 	}
@@ -375,10 +404,7 @@ func saveVersion(rdir, label string, now time.Time) (version, error) {
 	if label = sanitize(label); label != "" {
 		id += " " + label
 	}
-	if err := os.Mkdir(filepath.Join(vdir, id), 0o755); err != nil {
-		return version{}, err
-	}
-	if err := writeFileAtomic(filepath.Join(vdir, id, resumeFile), data); err != nil {
+	if err := newFolder(filepath.Join(vdir, id), files); err != nil {
 		return version{}, err
 	}
 	v, _ := parseVersion(id)
@@ -539,50 +565,36 @@ func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		src := filepath.Join(rdir, resumeFile)
+		src := rdir
 		if body.Version != "" {
-			if src, _, ok = versionFile(w, rdir, body.Version); !ok {
+			p, _, ok := versionFile(w, rdir, body.Version)
+			if !ok {
 				return
 			}
+			src = filepath.Dir(p)
 		}
-		b, err := os.ReadFile(src)
-		if err != nil {
+		var err error
+		if files, err = snapshot(src); err != nil {
 			httpError(w, http.StatusInternalServerError, err)
 			return
 		}
-		files[resumeFile] = b
-		// Side files and cover letters aren't versioned, so a copy of a version gets the current ones.
-		for _, name := range sideFiles {
-			b, err := os.ReadFile(filepath.Join(rdir, name))
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
+		// A version with neither side files nor cover letters (such as one saved
+		// before versions included them) gets the current ones.
+		if src != rdir && !exists(filepath.Join(src, additionalDir)) && !exists(filepath.Join(src, lettersDir)) {
+			current, err := snapshot(rdir)
 			if err != nil {
 				httpError(w, http.StatusInternalServerError, err)
 				return
 			}
-			files[name] = b
-		}
-		letters, err := listLetters(rdir)
-		if err != nil {
-			httpError(w, http.StatusInternalServerError, err)
-			return
-		}
-		for _, l := range letters {
-			name := filepath.Join(lettersDir, l.ID+".json")
-			b, err := os.ReadFile(filepath.Join(rdir, name))
-			if err != nil {
-				httpError(w, http.StatusInternalServerError, err)
-				return
-			}
-			files[name] = b
+			current[resumeFile] = files[resumeFile]
+			files = current
 		}
 	case body.Version != "":
 		httpError(w, http.StatusBadRequest, errors.New("a version needs the resume it is from"))
 		return
 	}
 	id := uniqueName(dir, sanitizeName(body.Name), "")
-	if err := newResume(dir, id, files); err != nil {
+	if err := newFolder(filepath.Join(dir, id), files); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -794,7 +806,13 @@ func (s *server) createVersion(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSONStatus(w, http.StatusCreated, v)
+	res := syncResult{Written: []string{}, Failed: []syncFailure{}}
+	s.exportVersion(r.Context(), rdir, v.ID, &res)
+	// The snapshot is kept when an export fails; Sync files retries it.
+	writeJSONStatus(w, http.StatusCreated, struct {
+		version
+		Failed []syncFailure `json:"failed"`
+	}{v, res.Failed})
 }
 
 func (s *server) getVersion(w http.ResponseWriter, r *http.Request) {
@@ -835,9 +853,15 @@ func (s *server) restoreVersion(w http.ResponseWriter, r *http.Request) {
 	if what == "" {
 		what = v.Created.Format("Jan 2 2006 3.04 PM")
 	}
-	if _, err := saveVersion(rdir, "Before restoring "+what, time.Now()); err != nil {
+	backup, err := saveVersion(rdir, "Before restoring "+what, time.Now())
+	if err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
+	}
+	res := syncResult{Written: []string{}, Failed: []syncFailure{}}
+	s.exportVersion(r.Context(), rdir, backup.ID, &res)
+	for _, f := range res.Failed {
+		log.Printf("exporting %s: %s", f.File, f.Error)
 	}
 	if err := writeFileAtomic(filepath.Join(rdir, resumeFile), data); err != nil {
 		httpError(w, http.StatusInternalServerError, err)

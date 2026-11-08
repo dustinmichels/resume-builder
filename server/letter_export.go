@@ -35,6 +35,7 @@ func markdownLetter(ld LetterDoc) []byte {
 func docxLetter(ld LetterDoc) ([]byte, error) {
 	l := ld.Letter
 	d := newDocxWriter(*ld.Style)
+	d.bottom = d.st.Margin / 2 // as in the template
 	sans := d.st.Font // name and headings use the resume's font
 	d.st.Font, d.st.FontSize = l.Style.Font, l.Style.FontSize
 	if d.st.Font == "" {

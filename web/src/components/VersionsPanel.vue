@@ -2,13 +2,13 @@
 import { shallowRef, watch } from 'vue'
 import { api } from '../api'
 import { formatDateTime } from '../format'
-import type { Version } from '../types'
+import type { SavedVersion, Version } from '../types'
 import PromptDialog, { type PromptRequest } from './PromptDialog.vue'
 
 const props = defineProps<{
   resumeId: string
-  /** Saves pending edits, then snapshots the resume. */
-  saveVersion: (label: string) => Promise<Version>
+  /** Saves pending edits, then snapshots the resume, its cover letters and details, with their copies. */
+  saveVersion: (label: string) => Promise<SavedVersion>
   /** Replaces the open resume with the version (the server snapshots it first). */
   restoreVersion: (version: Version) => Promise<void>
   /** Creates a new resume from the version and opens it. */
@@ -54,9 +54,12 @@ async function save() {
   saving.value = true
   error.value = null
   try {
-    await props.saveVersion(label.value.trim())
+    const { failed } = await props.saveVersion(label.value.trim())
     label.value = ''
     await load()
+    if (failed.length) {
+      error.value = `Saved, but some copies could not be written: ${failed.map((f) => `${f.file} (${f.error})`).join('; ')}. Sync files retries them.`
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -67,7 +70,8 @@ async function save() {
 function restore(version: Version) {
   prompt.value = {
     title: `Restore “${describe(version)}”?`,
-    message: 'The resume is replaced with this version. Its current state is saved as a version first, so you can go back.',
+    message:
+      'The resume is replaced with this version’s; cover letters, contact details and supervisors stay as they are (the version keeps its own copies). The current state is saved as a version first, so you can go back.',
     confirmLabel: 'Restore',
     run: async () => {
       await props.restoreVersion(version)
@@ -101,7 +105,7 @@ function remove(version: Version) {
   <div class="versions">
     <form class="new-version" @submit.prevent="save">
       <label class="field grow">
-        <span class="field-label">Save the resume as it is now</span>
+        <span class="field-label">Save the resume, its cover letters and details as they are now</span>
         <input v-model="label" class="input" placeholder="Label, e.g. “Sent to Acme”" :disabled="saving" />
       </label>
       <button class="btn btn-primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save version' }}</button>
@@ -111,8 +115,9 @@ function remove(version: Version) {
 
     <p v-if="loading" class="empty">Loading versions…</p>
     <p v-else-if="!versions.length" class="empty">
-      No versions yet. A version is a named snapshot of this resume, e.g. the copy you sent with an application. You can
-      restore it later or start a new resume from it.
+      No versions yet. A version is a named snapshot of this resume with its cover letters, contact details and
+      supervisors, plus Markdown, Word and PDF copies of the resume and letters, e.g. what you sent with an application.
+      You can restore it later or start a new resume from it.
     </p>
     <ul v-else class="list">
       <li v-for="v in versions" :key="v.id" class="version">

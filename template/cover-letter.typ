@@ -4,6 +4,9 @@
 // its resume's basics (the name at the top) and style (accent color, heading
 // font, page margin), so a letter always matches its resume.
 //
+// The bottom margin is half the resume's, as in samples/cover-letter, so a
+// typical letter fits on one page.
+//
 // As in resume.typ, decorations (the heading square, bullets) are drawn as
 // shapes, never typed as characters, so the PDF text layer holds only words.
 
@@ -19,7 +22,7 @@
 // Name and headings use the resume's font; the body uses the letter's.
 #let sans = st.font
 
-#set page(paper: "us-letter", margin: st.margin * 1in)
+#set page(paper: "us-letter", margin: (x: st.margin * 1in, top: st.margin * 1in, bottom: st.margin * 0.5in))
 #set text(font: letter.style.font, size: base, fill: ink, hyphenate: false)
 #set par(leading: 0.65em, spacing: 0.65em)
 #show link: set text(fill: accent)
