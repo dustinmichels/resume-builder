@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
-import { useExpandOnReveal } from '../reveal'
+import { hasFeature, useTemplate } from '../composables/useTemplates'
+import { setEntryIcon } from '../lineIcons'
+import { useOpenOnReveal } from '../reveal'
+import { richToText } from '../rich'
 import type { Entry } from '../types'
+import LineIconButton from './LineIconButton.vue'
 import RichText from './RichText.vue'
 import StringList from './StringList.vue'
 import VisibilityToggle from './VisibilityToggle.vue'
@@ -11,12 +15,13 @@ const { path } = defineProps<{ /** Field path of the entry, e.g. "sections.1.ite
 const emit = defineEmits<{ remove: []; duplicate: [] }>()
 
 // New (blank) entries open ready for typing; existing ones start collapsed.
-const open = shallowRef(!entry.value.title)
-useExpandOnReveal(
-  () => path,
-  () => (open.value = true),
-)
-const heading = computed(() => entry.value.title || 'Untitled entry')
+const open = shallowRef(!entry.value.title && !entry.value.subtitle)
+useOpenOnReveal(() => path, open)
+// An entry without a title (an organization line only) goes by its subtitle.
+const heading = computed(() => entry.value.title || richToText(entry.value.subtitle) || 'Untitled entry')
+const template = useTemplate()
+/** Index of the slot that adds an icon. */
+const iconCount = computed(() => entry.value.icons?.length ?? 0)
 </script>
 
 <template>
@@ -40,6 +45,19 @@ const heading = computed(() => entry.value.title || 'Untitled entry')
         <span class="field-label">Dates</span>
         <input v-model="entry.date" :data-path="`${path}.date`" class="input" placeholder="JAN 2021 – PRESENT" />
       </label>
+      <div v-if="hasFeature(template, 'entryIcons')" class="field wide">
+        <span class="field-label">Icons beside the title</span>
+        <div class="icons">
+          <LineIconButton
+            v-for="(icon, k) in entry.icons"
+            :key="k"
+            :icon="icon"
+            :data-path="`${path}.icons.${k}`"
+            @pick="(next) => setEntryIcon(entry, k, next)"
+          />
+          <LineIconButton :data-path="`${path}.icons.${iconCount}`" @pick="(next) => setEntryIcon(entry, iconCount, next)" />
+        </div>
+      </div>
       <div class="field">
         <span class="field-label">Subtitle</span>
         <RichText v-model="entry.subtitle" :data-path="`${path}.subtitle`" placeholder="Organization or degree" aria-label="Subtitle" />
@@ -48,7 +66,7 @@ const heading = computed(() => entry.value.title || 'Untitled entry')
         <span class="field-label">Location</span>
         <input v-model="entry.location" :data-path="`${path}.location`" class="input" placeholder="City, ST" />
       </label>
-      <div class="field bullets">
+      <div class="field wide">
         <span class="field-label">Bullets</span>
         <StringList v-model="entry.bullets" :path="`${path}.bullets`" add-label="Bullet" rich />
       </div>
@@ -112,7 +130,13 @@ const heading = computed(() => entry.value.title || 'Untitled entry')
   padding: 4px 12px 12px 30px;
 }
 
-.bullets {
+.wide {
   grid-column: 1 / -1;
+}
+
+.icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 </style>

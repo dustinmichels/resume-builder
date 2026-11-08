@@ -98,6 +98,7 @@ func newMux(s *server, static string) *http.ServeMux {
 	mux.HandleFunc("PUT /api/resumes/{id}/letters/{lid}", s.putLetter)
 	mux.HandleFunc("PATCH /api/resumes/{id}/letters/{lid}", s.renameLetter)
 	mux.HandleFunc("DELETE /api/resumes/{id}/letters/{lid}", s.deleteLetter)
+	mux.HandleFunc("GET /api/templates", s.listTemplates)
 	mux.HandleFunc("POST /api/preview", s.preview)
 	mux.HandleFunc("POST /api/links", s.checkLinks)
 	mux.HandleFunc("POST /api/pdf", s.pdf)
@@ -135,7 +136,12 @@ func (s *server) preview(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	out, err := renderResume(r.Context(), s.templatePath, raw, true)
+	tpl, err := s.templateFile(doc.Style.Template)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	out, err := renderResume(r.Context(), tpl, raw, true)
 	if err != nil {
 		renderError(w, err)
 		return
@@ -193,7 +199,12 @@ func (s *server) pdf(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	out, err := renderResume(r.Context(), s.templatePath, raw, false)
+	tpl, err := s.templateFile(doc.Style.Template)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	out, err := renderResume(r.Context(), tpl, raw, false)
 	if err != nil {
 		renderError(w, err)
 		return

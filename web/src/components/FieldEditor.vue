@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ImagePlus } from '@lucide/vue'
 import { computed, onMounted, useTemplateRef } from 'vue'
-import { describe, getContact, getString, iconSlotOf, isRich, listOf, setString } from '../fieldPath'
-import { setIcon, spliceIcons } from '../lineIcons'
+import { hasFeature, useTemplate } from '../composables/useTemplates'
+import { addEntryIconPath, describe, getContact, getString, iconSlotOf, isRich, listOf, setString } from '../fieldPath'
+import { spliceIcons } from '../lineIcons'
 import type { LineIcon, PageDoc } from '../types'
 import IconPicker from './IconPicker.vue'
 import RichText from './RichText.vue'
@@ -12,16 +13,19 @@ import RichText from './RichText.vue'
 const { doc, path } = defineProps<{ doc: PageDoc; path: string }>()
 const emit = defineEmits<{ close: []; navigate: [path: string]; tab: [direction: 1 | -1] }>()
 
+const template = useTemplate()
 const label = computed(() => describe(doc, path))
 const contact = computed(() => getContact(doc, path))
 const rich = computed(() => isRich(doc, path))
 const list = computed(() => listOf(doc, path))
 const value = computed(() => getString(doc, path) ?? '')
 const iconSlot = computed(() => iconSlotOf(doc, path))
-/** For a column line: the path of the icon beside it. */
-const iconPath = computed(() =>
-  list.value?.column ? `${list.value.base.replace(/lines$/, 'icons')}.${list.value.index}` : null,
-)
+/** For a column or legend line: the path of the icon beside it; for an entry's title: the slot adding an icon. */
+const iconPath = computed(() => {
+  const l = list.value
+  if (l?.iconLines) return `${l.base.replace(/lines$/, 'icons')}.${l.index}`
+  return hasFeature(template.value, 'entryIcons') ? addEntryIconPath(doc, path) : null
+})
 
 const richEl = useTemplateRef<InstanceType<typeof RichText>>('richEl')
 const inputEl = useTemplateRef<HTMLInputElement>('inputEl')
@@ -46,8 +50,7 @@ function set(text: string) {
 }
 
 function pickIcon(icon: LineIcon | null) {
-  const slot = iconSlot.value
-  if (slot) setIcon(slot.column, slot.index, icon)
+  iconSlot.value?.set(icon)
   emit('close')
 }
 
@@ -56,7 +59,7 @@ function onEnter() {
   const l = list.value
   if (!l) return emit('close')
   l.array.splice(l.index + 1, 0, l.create())
-  if (l.column) spliceIcons(l.column, l.index + 1, 0, 1)
+  if (l.iconLines) spliceIcons(l.iconLines, l.index + 1, 0, 1)
   emit('navigate', `${l.base}.${l.index + 1}${l.suffix}`)
 }
 
@@ -64,7 +67,8 @@ function removeItem() {
   const l = list.value
   if (!l) return
   l.array.splice(l.index, 1)
-  if (l.column) spliceIcons(l.column, l.index, 1)
+  if (l.iconLines) spliceIcons(l.iconLines, l.index, 1)
+  if (!l.array.length) l.onEmpty?.()
   if (l.index > 0) emit('navigate', `${l.base}.${l.index - 1}${l.suffix}`)
   else if (l.array.length) emit('navigate', `${l.base}.0${l.suffix}`)
   else emit('close')
@@ -105,8 +109,8 @@ function onKeydown(e: KeyboardEvent) {
           v-if="iconPath"
           class="icon-btn"
           type="button"
-          title="Icon"
-          aria-label="Choose an icon"
+          :title="list?.iconLines ? 'Icon' : 'Add an icon'"
+          :aria-label="list?.iconLines ? 'Choose an icon' : 'Add an icon'"
           @click="emit('navigate', iconPath)"
         >
           <ImagePlus :size="15" aria-hidden="true" />
@@ -115,7 +119,7 @@ function onKeydown(e: KeyboardEvent) {
       </span>
     </div>
 
-    <IconPicker v-if="iconSlot" ref="pickerEl" :current="iconSlot.column.icons?.[iconSlot.index]" @pick="pickIcon" />
+    <IconPicker v-if="iconSlot" ref="pickerEl" :current="iconSlot.icon" :icons="template.icons" @pick="pickIcon" />
 
     <div v-else-if="contact" class="fe-contact">
       <input

@@ -45,9 +45,10 @@ const (
 	sidePad = 1.0 // pt
 )
 
-// queryFields lists the field marks of template main in dir, in document order.
-func queryFields(ctx context.Context, dir, main string) ([]fieldMark, error) {
-	cmd := exec.CommandContext(ctx, "typst", "eval", "--diagnostic-format", "short",
+// queryFields lists the field marks of template main in dir, in document
+// order, laid out with the fonts in the fonts folder (as when rendering).
+func queryFields(ctx context.Context, dir, fonts, main string) ([]fieldMark, error) {
+	cmd := exec.CommandContext(ctx, "typst", "eval", "--diagnostic-format", "short", "--font-path", fonts,
 		"query(<field>).map(it => it.value)", "--in", main)
 	cmd.Dir = dir
 	var stderr bytes.Buffer

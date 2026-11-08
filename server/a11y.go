@@ -92,10 +92,10 @@ func accessibilityChecks(doc Doc, uaErrors []string, facts *pdfFacts) []Check {
 	}
 
 	if facts != nil {
-		pieces := contentPieces(doc)
-		missing, outOfOrder := findPieces(pieces, facts.TagText, squash)
+		groups := contentGroups(doc)
+		missing, outOfOrder := findPieces(groups, facts.TagText, squash)
 		if len(missing) > 0 {
-			l.add("error", fmt.Sprintf("%d of %d text pieces hidden from screen readers", len(missing), len(pieces)),
+			l.add("error", fmt.Sprintf("%d of %d text pieces hidden from screen readers", len(missing), pieceCount(groups)),
 				"Not in the PDF’s tags (marked as decoration, or untagged):\n"+sample(missing))
 		}
 		if len(outOfOrder) > 0 {
@@ -103,7 +103,7 @@ func accessibilityChecks(doc Doc, uaErrors []string, facts *pdfFacts) []Check {
 				"Screen readers reach these earlier than they appear in the resume:\n"+sample(outOfOrder))
 		}
 		if len(missing) == 0 && len(outOfOrder) == 0 {
-			l.add("ok", fmt.Sprintf("Screen readers read all %d text pieces in order", len(pieces)), "")
+			l.add("ok", fmt.Sprintf("Screen readers read all %d text pieces in order", pieceCount(groups)), "")
 		}
 
 		titles := sectionTitles(doc)

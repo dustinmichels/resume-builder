@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ImagePlus } from '@lucide/vue'
 import { shallowRef, useTemplateRef, watch } from 'vue'
-import { iconUrl } from '../lineIcons'
+import { useTemplate } from '../composables/useTemplates'
+import { iconStyle } from '../lineIcons'
 import type { LineIcon } from '../types'
 import IconPicker from './IconPicker.vue'
 
-/** A line's icon in the sidebar; clicking opens the icon picker below it. */
+/** An icon in the sidebar; clicking opens the icon picker, with the template's icons, below it. */
 const { icon = null } = defineProps<{ icon?: LineIcon | null }>()
 const emit = defineEmits<{ pick: [icon: LineIcon | null] }>()
 
+const template = useTemplate()
 const open = shallowRef(false)
 const root = useTemplateRef<HTMLElement>('root')
 
@@ -37,11 +39,11 @@ watch(open, (isOpen, _, onCleanup) => {
       :aria-expanded="open"
       @click="open = !open"
     >
-      <span v-if="icon" class="glyph" :style="{ maskImage: iconUrl(icon) }" aria-hidden="true" />
+      <span v-if="icon" class="glyph" :style="iconStyle(icon)" aria-hidden="true" />
       <ImagePlus v-else class="placeholder" :size="15" aria-hidden="true" />
     </button>
     <div v-if="open" class="popover">
-      <IconPicker :current="icon" @pick="pick" />
+      <IconPicker :current="icon" :icons="template.icons" @pick="pick" />
     </div>
   </div>
 </template>

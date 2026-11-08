@@ -1,0 +1,77 @@
+[
+  {
+    "file": "food-access.svg",
+    "name": "Food access",
+    "color": "#d36c1c"
+  },
+  {
+    "file": "agriculture.svg",
+    "name": "Agriculture",
+    "color": "#a9b854"
+  },
+  {
+    "file": "research.svg",
+    "name": "Research",
+    "color": "#7fb7e6"
+  },
+  {
+    "file": "design-branding.svg",
+    "name": "Design/branding",
+    "color": "#9c9fb1"
+  },
+  {
+    "file": "interests-skills.svg",
+    "name": "Interests/skills",
+    "color": "#231f20"
+  },
+  {
+    "file": "food.svg",
+    "name": "Food",
+    "color": "#db3064"
+  },
+  {
+    "file": "hand-outlined.svg",
+    "name": "Hand, outlined",
+    "color": "#f7931e"
+  },
+  {
+    "file": "hand-line.svg",
+    "name": "Hand, line",
+    "color": "#f7931e"
+  },
+  {
+    "file": "hand-black.svg",
+    "name": "Hand, black",
+    "color": "#000000"
+  },
+  {
+    "file": "hand-black-2.svg",
+    "name": "Hand, black 2",
+    "color": "#000000"
+  },
+  {
+    "file": "sprout-outlined.svg",
+    "name": "Sprout, outlined",
+    "color": "#496f3c"
+  },
+  {
+    "file": "sprout-yellow.svg",
+    "name": "Sprout, yellow",
+    "color": "#e6e24f"
+  },
+  {
+    "file": "microscope.svg",
+    "name": "Microscope",
+    "color": "#0000ff"
+  },
+  {
+    "file": "ring.svg",
+    "name": "Ring",
+    "color": "#333333"
+  },
+  {
+    "file": "circle.svg",
+    "name": "Circle",
+    "color": "#333333"
+  }
+]

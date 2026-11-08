@@ -1,6 +1,6 @@
-// Resume document schema. Mirrored by template/resume.typ (rendering),
-// server/checks.go (machine-readability checks) and server/docx.go +
-// server/markdown.go (Word and Markdown exports).
+// Resume document schema. Mirrored by the resume templates in template/
+// (rendering), server/checks.go (machine-readability checks) and
+// server/docx.go + server/markdown.go (Word and Markdown exports).
 //
 // Inline text fields accept **bold**, *italic*, ***bold italic*** and [label](url).
 //
@@ -28,6 +28,8 @@ export interface Entry {
   subtitle: string
   location: string
   bullets: string[]
+  /** Icons beside the entry's title, in order (templates with the entryIcons feature). Missing when empty. */
+  icons?: LineIcon[]
 }
 
 /** A small italic heading between entries, e.g. "Non-degree education:". */
@@ -55,21 +57,31 @@ export interface EntriesSection {
   title: string
   uppercaseTitles: boolean
   items: EntryItem[]
+  /** compactEntries templates: each entry runs together on one line, details included. */
+  compact?: boolean
+  /** legend templates: labelled icons printed after the section title, explaining the entries' icons. Missing when it has no lines. */
+  legend?: IconLines
 }
 
-/** A Lucide icon. `svg` is its markup, so the template draws it without an icon set. */
+/** An icon drawn beside text. `svg` is its markup, so the template draws it without an icon set. */
 export interface LineIcon {
   name: string
   svg: string
+  /** From a template's icon set: the color of a legend label beside it. Lucide icons have none (drawn in the accent color). */
+  color?: string
 }
 
-export interface Column {
-  id: string
-  hidden?: boolean
-  title: string
+/** Lines with an optional icon beside each: a column's lines, a section's legend. */
+export interface IconLines {
   lines: string[]
   /** The icon beside each line, by line index; null or missing for none. */
   icons?: (LineIcon | null)[]
+}
+
+export interface Column extends IconLines {
+  id: string
+  hidden?: boolean
+  title: string
   /**
    * Side-by-side sections only: the column's share of the line width (0–1),
    * set by dragging the divider after it. Missing: it hugs its content. The
@@ -92,10 +104,13 @@ export type Section = TextSection | EntriesSection | ColumnsSection
 export type SectionKind = Section['kind']
 
 export interface Style {
+  /** Resume template id; missing or '' is the classic template (template/resume.typ). */
+  template?: string
   accent: string
   font: string
   fontSize: number
   margin: number
+  /** Leader, bullet and paragraphMarker: templates with the markers feature only. */
   leader: 'dotted' | 'dashed' | 'solid' | 'none'
   bullet: 'diamonds' | 'diamond' | 'square' | 'disc' | 'none'
   paragraphMarker: 'chevron' | 'none'
@@ -243,6 +258,23 @@ export interface FieldBox {
 export interface Settings {
   dataDir: string
   defaultDataDir: string
+}
+
+/**
+ * markers: the leader, bullet and paragraphMarker styles; uppercaseTitles: EntriesSection.uppercaseTitles;
+ * entryIcons: Entry.icons; legend: EntriesSection.legend; compactEntries: EntriesSection.compact.
+ */
+export type TemplateFeature = 'markers' | 'uppercaseTitles' | 'entryIcons' | 'legend' | 'compactEntries'
+
+/** A resume template; GET /api/templates lists them, classic first. */
+export interface TemplateInfo {
+  /** '' is classic (template/resume.typ). */
+  id: string
+  name: string
+  /** What the template draws beyond the common schema; the editor shows the matching controls only for these. */
+  features: TemplateFeature[]
+  /** The template's own icon set; [] for none. */
+  icons: LineIcon[]
 }
 
 /** A saved resume or cover letter; `id` is its file or folder name and display name. */

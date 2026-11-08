@@ -77,6 +77,7 @@ type Style struct {
 	Leader          string  `json:"leader"`
 	Bullet          string  `json:"bullet"`
 	ParagraphMarker string  `json:"paragraphMarker"`
+	Template        string  `json:"template"` // resume template id; "" = classic
 }
 
 type Check struct {
@@ -199,61 +200,83 @@ func (l *checkList) decorativeSymbols(text string, lines []string) {
 
 // missingPieces reports content that didn't survive into the text layer.
 func (l *checkList) missingPieces(doc Doc, text string) {
-	pieces := contentPieces(doc)
-	if missing, _ := findPieces(pieces, text, normalize); len(missing) > 0 {
-		l.add("error", fmt.Sprintf("%d of %d text pieces not found in the text layer", len(missing), len(pieces)),
+	groups := contentGroups(doc)
+	if missing, _ := findPieces(groups, text, normalize); len(missing) > 0 {
+		l.add("error", fmt.Sprintf("%d of %d text pieces not found in the text layer", len(missing), pieceCount(groups)),
 			sample(missing))
 	} else {
-		l.add("ok", fmt.Sprintf("All %d text pieces found in the text layer", len(pieces)), "")
+		l.add("ok", fmt.Sprintf("All %d text pieces found in the text layer", pieceCount(groups)), "")
 	}
 }
 
-// findPieces looks for each piece in text, in order, comparing their key
-// forms. missing pieces aren't in text at all; outOfOrder pieces are, but
-// only before an earlier piece.
-func findPieces(pieces []string, text string, key func(string) string) (missing, outOfOrder []string) {
+// findPieces looks for each group of pieces in text, in order, comparing
+// their key forms. Pieces within a group may read in any order (templates
+// arrange an entry's title, date, subtitle and location differently), but
+// after the group before. missing pieces aren't in text at all; outOfOrder
+// pieces are, but only before an earlier group.
+func findPieces(groups [][]string, text string, key func(string) string) (missing, outOfOrder []string) {
 	full := key(text)
 	pos := 0
-	for _, p := range pieces {
-		np := key(p)
-		if i := strings.Index(full[pos:], np); i >= 0 {
-			pos += i + len(np)
-		} else if strings.Contains(full, np) {
-			outOfOrder = append(outOfOrder, p)
-		} else {
-			missing = append(missing, p)
+	for _, g := range groups {
+		end := pos
+		for _, p := range g {
+			np := key(p)
+			if i := strings.Index(full[pos:], np); i >= 0 {
+				end = max(end, pos+i+len(np))
+			} else if strings.Contains(full, np) {
+				outOfOrder = append(outOfOrder, p)
+			} else {
+				missing = append(missing, p)
+			}
 		}
+		pos = end
 	}
 	return missing, outOfOrder
 }
 
 // contentPieces lists the user-written strings that must appear in the PDF.
-func contentPieces(doc Doc) []string {
-	var out []string
-	add := func(s ...string) {
+func contentPieces(doc Doc) []string { return slices.Concat(contentGroups(doc)...) }
+
+func pieceCount(groups [][]string) int { return len(slices.Concat(groups...)) }
+
+// contentGroups lists the user-written strings that must appear in the PDF,
+// in reading order: an entry's title, date, subtitle and location as one
+// group, every other string as a group of its own.
+func contentGroups(doc Doc) [][]string {
+	var out [][]string
+	group := func(s ...string) {
+		var g []string
 		for _, v := range s {
 			if strings.TrimSpace(v) != "" {
-				out = append(out, v)
+				g = append(g, v)
 			}
+		}
+		if len(g) > 0 {
+			out = append(out, g)
+		}
+	}
+	each := func(s ...string) {
+		for _, v := range s {
+			group(v)
 		}
 	}
 	if doc.Basics != nil {
-		add(doc.Basics.Name)
-		add(doc.Basics.Headline...)
+		each(doc.Basics.Name)
+		each(doc.Basics.Headline...)
 		for _, c := range doc.Basics.Contacts {
-			add(c.Text)
+			each(c.Text)
 		}
 	}
 	for _, sec := range doc.Sections {
-		add(sec.Title)
-		add(sec.Paragraphs...)
+		each(sec.Title)
+		each(sec.Paragraphs...)
 		for _, it := range sec.Items {
-			add(it.Title, it.Date, it.Subtitle, it.Location, it.Text)
-			add(it.Bullets...)
+			group(it.Title, it.Date, it.Subtitle, it.Location, it.Text)
+			each(it.Bullets...)
 		}
 		for _, c := range sec.Columns {
-			add(c.Title)
-			add(c.Lines...)
+			each(c.Title)
+			each(c.Lines...)
 		}
 	}
 	return out

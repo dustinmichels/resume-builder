@@ -18,6 +18,7 @@ import { useCoverLetters } from './composables/useCoverLetters'
 import { useLibrary } from './composables/useLibrary'
 import { useLinkChecks } from './composables/useLinkChecks'
 import { usePreview } from './composables/usePreview'
+import { provideTemplate } from './composables/useTemplates'
 import { useUndoHistory } from './composables/useUndoHistory'
 import { provideReveal } from './reveal'
 import type { LetterDoc } from './types'
@@ -71,6 +72,7 @@ const actionError = shallowRef<string | null>(null)
 const prompt = shallowRef<PromptRequest | null>(null)
 const sidebar = useTemplateRef<HTMLElement>('sidebar')
 const revealing = provideReveal()
+provideTemplate(() => doc.value?.style)
 const syncing = shallowRef(false)
 /** What the last sync did; cleared once the saved resume changes. */
 const synced = shallowRef<string | null>(null)

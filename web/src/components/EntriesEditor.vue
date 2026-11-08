@@ -56,6 +56,8 @@ function duplicate(index: number) {
 <style scoped>
 .list {
   display: grid;
+  /* Long entry titles ellipsize instead of widening the sidebar. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
 }
 

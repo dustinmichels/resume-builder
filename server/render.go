@@ -57,12 +57,18 @@ func renderResume(ctx context.Context, templatePath string, raw []byte, svg bool
 // render compiles a template, with files written beside it, to PDF and, when
 // svg is set, to one SVG per page plus the map of where each editable value
 // sits on those pages. The template is re-read on every call so template edits
-// show up live.
+// show up live. Fonts in the fonts folder beside the template are found as if
+// installed.
 func render(ctx context.Context, templatePath string, files map[string][]byte, svg bool) (*rendered, error) {
 	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	defer cancel()
 
 	tpl, err := os.ReadFile(templatePath)
+	if err != nil {
+		return nil, err
+	}
+	// Absolute: typst runs in the temporary folder.
+	fonts, err := filepath.Abs(filepath.Join(filepath.Dir(templatePath), "fonts"))
 	if err != nil {
 		return nil, err
 	}
@@ -88,21 +94,21 @@ func render(ctx context.Context, templatePath string, files map[string][]byte, s
 	fields := make(chan fieldsResult, 1)
 	if svg {
 		go func() {
-			_, err := typst(ctx, dir, main, "page-{0p}.svg")
+			_, err := typst(ctx, dir, fonts, main, "page-{0p}.svg")
 			svgErr <- err
 		}()
 		go func() {
-			marks, err := queryFields(ctx, dir, main)
+			marks, err := queryFields(ctx, dir, fonts, main)
 			fields <- fieldsResult{marks, err}
 		}()
 	} else {
 		svgErr <- nil
 		fields <- fieldsResult{}
 	}
-	stderr, pdfErr := typst(ctx, dir, main, "output.pdf", "--pdf-standard", "ua-1")
+	stderr, pdfErr := typst(ctx, dir, fonts, main, "output.pdf", "--pdf-standard", "ua-1")
 	if ce, ok := errors.AsType[*compileError](pdfErr); ok && strings.Contains(ce.Output, uaErrorTag) {
 		out.UAErrors = slices.DeleteFunc(strings.Split(ce.Output, "\n"), func(l string) bool { return !strings.Contains(l, uaErrorTag) })
-		stderr, pdfErr = typst(ctx, dir, main, "output.pdf")
+		stderr, pdfErr = typst(ctx, dir, fonts, main, "output.pdf")
 	}
 	f := <-fields
 	if err := errors.Join(pdfErr, <-svgErr); err != nil {
@@ -139,10 +145,11 @@ func render(ctx context.Context, templatePath string, files map[string][]byte, s
 // uaErrorTag starts Typst's PDF/UA-1 violation messages.
 const uaErrorTag = "PDF/UA-1 error"
 
-// typst compiles dir/main to dir/output. It runs inside dir so diagnostics
-// name files relative to the template ("resume.typ:14:18: …").
-func typst(ctx context.Context, dir, main, output string, flags ...string) (string, error) {
-	args := append([]string{"compile", "--diagnostic-format", "short"}, flags...)
+// typst compiles dir/main to dir/output, with the fonts in the fonts folder.
+// It runs inside dir so diagnostics name files relative to the template
+// ("resume.typ:14:18: …").
+func typst(ctx context.Context, dir, fonts, main, output string, flags ...string) (string, error) {
+	args := append([]string{"compile", "--diagnostic-format", "short", "--font-path", fonts}, flags...)
 	cmd := exec.CommandContext(ctx, "typst", append(args, main, output)...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer

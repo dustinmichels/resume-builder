@@ -63,3 +63,16 @@ func TestAnalyze(t *testing.T) {
 		t.Errorf("dropped subtitle+location: got %s, want error", got)
 	}
 }
+
+// An entry's heading fields may read in any order; content across entries may not.
+func TestFindPiecesOrder(t *testing.T) {
+	groups := [][]string{{"Analyst", "2020", "Engine Co"}, {"Built maps"}, {"Clerk", "2018", "Shop"}}
+	_, outOfOrder := findPieces(groups, "Engine Co, 2020\nAnalyst\nBuilt maps\nShop 2018 Clerk", normalize)
+	if len(outOfOrder) != 0 {
+		t.Errorf("fields reordered within entries: got out of order %q, want none", outOfOrder)
+	}
+	_, outOfOrder = findPieces(groups, "Built maps\nAnalyst 2020 Engine Co\nClerk 2018 Shop", normalize)
+	if want := []string{"Built maps"}; strings.Join(outOfOrder, "|") != strings.Join(want, "|") {
+		t.Errorf("bullet before its entry: got out of order %q, want %q", outOfOrder, want)
+	}
+}

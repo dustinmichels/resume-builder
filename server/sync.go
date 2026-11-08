@@ -81,12 +81,8 @@ func (s *server) exportFolder(ctx context.Context, folder, rel string, res *sync
 		}
 	}
 	resumePath := filepath.Join(folder, resumeFile)
-	if tpl, err := os.Stat(s.templatePath); err != nil {
-		record(resumeFile, nil, err)
-	} else {
-		written, err := s.syncResume(ctx, resumePath, tpl.ModTime())
-		record(resumeFile, written, err)
-	}
+	written, err := s.syncResume(ctx, resumePath)
+	record(resumeFile, written, err)
 
 	letters, err := listLetters(folder)
 	if err != nil {
@@ -121,8 +117,8 @@ func latest(a, b time.Time) time.Time {
 }
 
 // syncResume updates the exports beside the resume JSON at path (the
-// resume or a version).
-func (s *server) syncResume(ctx context.Context, path string, tplModified time.Time) ([]string, error) {
+// resume or a version); its PDF is also redrawn when older than its template.
+func (s *server) syncResume(ctx context.Context, path string) ([]string, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -135,12 +131,20 @@ func (s *server) syncResume(ctx context.Context, path string, tplModified time.T
 	if err != nil {
 		return nil, err
 	}
+	tpl, err := s.templateFile(doc.Style.Template)
+	if err != nil {
+		return nil, err
+	}
+	tfi, err := os.Stat(tpl)
+	if err != nil {
+		return nil, err
+	}
 	docx, err := docxResume(doc)
 	if err != nil {
 		return nil, err
 	}
-	return writeExports(strings.TrimSuffix(path, ".json"), markdownResume(doc), docx, latest(fi.ModTime(), tplModified), func() (*rendered, error) {
-		return renderResume(ctx, s.templatePath, raw, false)
+	return writeExports(strings.TrimSuffix(path, ".json"), markdownResume(doc), docx, latest(fi.ModTime(), tfi.ModTime()), func() (*rendered, error) {
+		return renderResume(ctx, tpl, raw, false)
 	})
 }
 

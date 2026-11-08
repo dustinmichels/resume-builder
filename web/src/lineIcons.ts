@@ -1,28 +1,29 @@
-// A column's icons sit in an array parallel to its lines (Column.icons). These
-// keep each icon beside its line as lines are inserted, removed and reordered.
-import type { Column, LineIcon } from './types'
+// A column's or legend's icons sit in an array parallel to its lines
+// (IconLines.icons). These keep each icon beside its line as lines are
+// inserted, removed and reordered.
+import type { Entry, IconLines, LineIcon } from './types'
 
 /** Mirrors `lines.splice(start, deleteCount, ...insertCount blank lines)`. */
-export function spliceIcons(col: Column, start: number, deleteCount: number, insertCount = 0) {
-  if (!col.icons || start >= col.icons.length) return
-  col.icons.splice(start, deleteCount, ...Array<null>(insertCount).fill(null))
-  trim(col)
+export function spliceIcons(owner: IconLines, start: number, deleteCount: number, insertCount = 0) {
+  if (!owner.icons || start >= owner.icons.length) return
+  owner.icons.splice(start, deleteCount, ...Array<null>(insertCount).fill(null))
+  trim(owner)
 }
 
 /** Mirrors moving the line at `from` to `to`. */
-export function moveIcon(col: Column, from: number, to: number) {
-  if (!col.icons || from === to) return
-  pad(col.icons, Math.max(from, to))
-  const [icon] = col.icons.splice(from, 1)
-  col.icons.splice(to, 0, icon ?? null)
-  trim(col)
+export function moveIcon(owner: IconLines, from: number, to: number) {
+  if (!owner.icons || from === to) return
+  pad(owner.icons, Math.max(from, to))
+  const [icon] = owner.icons.splice(from, 1)
+  owner.icons.splice(to, 0, icon ?? null)
+  trim(owner)
 }
 
-export function setIcon(col: Column, index: number, icon: LineIcon | null) {
-  const icons = (col.icons ??= [])
+export function setIcon(owner: IconLines, index: number, icon: LineIcon | null) {
+  const icons = (owner.icons ??= [])
   pad(icons, index)
   icons[index] = icon
-  trim(col)
+  trim(owner)
 }
 
 function pad(icons: (LineIcon | null)[], index: number) {
@@ -30,14 +31,35 @@ function pad(icons: (LineIcon | null)[], index: number) {
 }
 
 /** Drops trailing empty slots, and the array once it holds no icon. */
-function trim(col: Column) {
-  const icons = col.icons!
+function trim(owner: IconLines) {
+  const icons = owner.icons!
   while (icons.length && !icons.at(-1)) icons.pop()
-  if (!icons.length) delete col.icons
+  if (!icons.length) delete owner.icons
 }
 
-/** For a CSS mask: the icon shows in currentColor and its markup never runs. */
-export const iconUrl = (icon: LineIcon) => `url("data:image/svg+xml,${encodeURIComponent(icon.svg)}")`
+/**
+ * Sets the entry's icon at `index`: index === length appends, null removes
+ * it. The array is dropped once empty.
+ */
+export function setEntryIcon(entry: Entry, index: number, icon: LineIcon | null) {
+  const icons = (entry.icons ??= [])
+  if (icon) icons[Math.min(index, icons.length)] = icon
+  else icons.splice(index, 1)
+  if (!icons.length) delete entry.icons
+}
+
+const iconUrl = (icon: LineIcon) => `url("data:image/svg+xml,${encodeURIComponent(icon.svg)}")`
+
+/**
+ * Inline style drawing the icon on an element sized for it; its markup never
+ * runs. Icons drawn in currentColor (Lucide's) are a mask showing the
+ * element's background color; others, like template icon sets, have fixed
+ * colors and are a background image.
+ */
+export const iconStyle = (icon: LineIcon) =>
+  icon.svg.includes('currentColor')
+    ? { maskImage: iconUrl(icon) }
+    : { background: `${iconUrl(icon)} center / contain no-repeat` }
 
 // Attributes that draw the icon; the rest (class, size, aria, Vue's scoped-style
 // data attributes) are the editor's. The serializer adds xmlns itself.

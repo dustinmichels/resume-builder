@@ -1,10 +1,12 @@
 // Field paths address one editable value in the previewed document, a
 // ResumeDoc or a LetterDoc, dot-separated with indexes into the unfiltered
 // arrays: "basics.name", "sections.2.items.0.bullets.3", "basics.contacts.1"
-// (a whole contact), "letter.blocks.3.text", "letter.blocks.4.items.0".
+// (a whole contact), "letter.blocks.3.text", "letter.blocks.4.items.0",
+// "sections.1.items.0.icons.1" (an icon).
 // The server reports them with each rendered field (Preview.fields).
 import { newLetterBlock } from './factory'
-import type { Column, Contact, LetterBlock, PageDoc } from './types'
+import { setEntryIcon, setIcon } from './lineIcons'
+import type { Contact, EntriesSection, EntryItem, IconLines, LetterBlock, LineIcon, PageDoc } from './types'
 
 export function getAt(doc: PageDoc, path: string): unknown {
   let cur: unknown = doc
@@ -39,28 +41,54 @@ export function getContact(doc: PageDoc, path: string): Contact | undefined {
   return typeof value?.text === 'string' ? value : undefined
 }
 
-const ICON = /^(sections\.\d+\.columns\.\d+)\.icons\.(\d+)$/
+const LINE_ICON = /^(sections\.\d+\.(?:columns\.\d+|legend))\.icons\.(\d+)$/
+const ENTRY_ICON = /^(sections\.\d+\.items\.\d+)\.icons\.(\d+)$/
 
-/** A column line's icon slot ("sections.4.columns.1.icons.2"); it may hold no icon. */
+/**
+ * An icon slot: beside a column or legend line ("sections.4.columns.1.icons.2",
+ * "sections.1.legend.icons.0"), where it may hold no icon, or one of an
+ * entry's icons ("sections.1.items.0.icons.1"), where the slot one past the
+ * last adds an icon.
+ */
 export interface IconSlot {
-  column: Column
-  index: number
+  icon: LineIcon | null
+  /** Sets the slot's icon; null removes it. */
+  set: (icon: LineIcon | null) => void
 }
 
-/** The icon slot an icons path addresses, if its line exists; null for any other path. */
+/** The icon slot an icons path addresses, if its line or entry exists; null for any other path. */
 export function iconSlotOf(doc: PageDoc, path: string): IconSlot | null {
-  const m = ICON.exec(path)
-  if (!m) return null
-  const column = getAt(doc, m[1]!) as Column | undefined
-  const index = Number(m[2])
-  return typeof column?.lines?.[index] === 'string' ? { column, index } : null
+  let m = LINE_ICON.exec(path)
+  if (m) {
+    const owner = getAt(doc, m[1]!) as IconLines | undefined
+    const index = Number(m[2])
+    if (typeof owner?.lines?.[index] !== 'string') return null
+    return { icon: owner.icons?.[index] ?? null, set: (icon) => setIcon(owner, index, icon) }
+  }
+  m = ENTRY_ICON.exec(path)
+  if (m) {
+    const entry = getAt(doc, m[1]!) as EntryItem | undefined
+    const index = Number(m[2])
+    if (entry?.type !== 'entry' || index > (entry.icons?.length ?? 0)) return null
+    return { icon: entry.icons?.[index] ?? null, set: (icon) => setEntryIcon(entry, index, icon) }
+  }
+  return null
 }
 
 /** Whether the path still addresses an editable value. */
 export function resolves(doc: PageDoc, path: string): boolean {
   if (CONTACT.test(path)) return getContact(doc, path) !== undefined
-  if (ICON.test(path)) return iconSlotOf(doc, path) !== null
+  if (LINE_ICON.test(path) || ENTRY_ICON.test(path)) return iconSlotOf(doc, path) !== null
   return getString(doc, path) !== undefined
+}
+
+const ENTRY_TITLE = /^(sections\.\d+\.items\.\d+)\.title$/
+
+/** For an entry's title: the path of the slot that adds an icon to the entry; null for any other path. */
+export function addEntryIconPath(doc: PageDoc, path: string): string | null {
+  const m = ENTRY_TITLE.exec(path)
+  const entry = m && (getAt(doc, m[1]!) as EntryItem | undefined)
+  return entry?.type === 'entry' ? `${m![1]}.icons.${entry.icons?.length ?? 0}` : null
 }
 
 const LETTER_BLOCK = /^letter\.blocks\.(\d+)\.text$/
@@ -74,14 +102,15 @@ function letterBlockOf(doc: PageDoc, path: string): { block: LetterBlock; index:
 }
 
 const RICH =
-  /^(?:sections\.\d+\.(?:paragraphs\.\d+|items\.\d+\.(?:subtitle|text|bullets\.\d+)|columns\.\d+\.lines\.\d+)|letter\.(?:header\.\d+|blocks\.\d+\.items\.\d+))$/
+  /^(?:sections\.\d+\.(?:paragraphs\.\d+|items\.\d+\.(?:subtitle|text|bullets\.\d+)|(?:columns\.\d+|legend)\.lines\.\d+)|letter\.(?:header\.\d+|blocks\.\d+\.items\.\d+))$/
 
 /** Fields the templates render with inline markup; all others are literal text. */
 export const isRich = (doc: PageDoc, path: string) =>
   RICH.test(path) || letterBlockOf(doc, path)?.block.kind === 'paragraph'
 
 const LIST_ITEM =
-  /^(basics\.headline|sections\.\d+\.(?:paragraphs|items\.\d+\.bullets|columns\.\d+\.lines)|letter\.(?:header|blocks\.\d+\.items))\.(\d+)$/
+  /^(basics\.headline|sections\.\d+\.(?:paragraphs|items\.\d+\.bullets|(?:columns\.\d+|legend)\.lines)|letter\.(?:header|blocks\.\d+\.items))\.(\d+)$/
+const LEGEND_LINES = /^(sections\.\d+)\.legend\.lines$/
 
 /** An item in a list the user can add to and remove from. */
 export interface ListItem {
@@ -93,8 +122,10 @@ export interface ListItem {
   suffix: string
   /** A new, empty item. */
   create: () => unknown
-  /** The column, when the list is its lines (which keep icons beside them). */
-  column?: Column
+  /** The column or legend, when the list is its lines (which keep icons beside them). */
+  iconLines?: IconLines
+  /** Call after removing the last item: drops a legend left without lines. */
+  onEmpty?: () => void
 }
 
 export function listOf(doc: PageDoc, path: string): ListItem | null {
@@ -109,8 +140,14 @@ export function listOf(doc: PageDoc, path: string): ListItem | null {
   const base = m[1]!
   const array = getAt(doc, base)
   if (!Array.isArray(array)) return null
-  const column = base.endsWith('.lines') ? (getAt(doc, base.slice(0, -'.lines'.length)) as Column) : undefined
-  return { array, index: Number(m[2]), base, suffix: '', create: () => '', column }
+  const item: ListItem = { array, index: Number(m[2]), base, suffix: '', create: () => '' }
+  if (base.endsWith('.lines')) item.iconLines = getAt(doc, base.slice(0, -'.lines'.length)) as IconLines
+  const legend = LEGEND_LINES.exec(base)
+  if (legend) {
+    const section = getAt(doc, legend[1]!) as EntriesSection
+    item.onEmpty = () => delete section.legend
+  }
+  return item
 }
 
 const ENTRY_FIELDS: Record<string, string> = {
@@ -118,6 +155,7 @@ const ENTRY_FIELDS: Record<string, string> = {
   subtitle: 'Subtitle',
   location: 'Location',
   bullets: 'Bullet',
+  icons: 'Icon',
 }
 
 const LETTER_FIELDS: Record<string, string> = {
@@ -145,6 +183,7 @@ export function describe(doc: PageDoc, path: string): string {
   if (!section || field === 'title') return 'Section heading'
   const inName = (name: string | undefined) => (name ? ` in ${name}` : '')
   if (field === 'paragraphs') return `Paragraph${inName(section.title)}`
+  if (field === 'legend') return `Legend ${b === 'icons' ? 'icon' : 'line'}${inName(section.title)}`
   if (field === 'items' && section.kind === 'entries') {
     const item = section.items[Number(b)]
     if (item?.type === 'label') return 'Subheading'

@@ -10,6 +10,7 @@ import type {
   Settings,
   SupervisorsDoc,
   SyncResult,
+  TemplateInfo,
   Version,
 } from './types'
 
@@ -52,6 +53,11 @@ export const api = {
   /** Creates the folder if needed and seeds it with a resume when it has none. */
   async setDataDir(dataDir: string): Promise<Settings> {
     return (await request('/api/settings', send('PUT', JSON.stringify({ dataDir })))).json()
+  },
+
+  /** Classic first. */
+  async getTemplates(): Promise<TemplateInfo[]> {
+    return (await request('/api/templates')).json()
   },
 
   /** Most recently modified first. */

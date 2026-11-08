@@ -8,8 +8,8 @@ machines (applicant tracking systems, parsers) will read from the PDF.
 - **Backend** (`server/`): Go, standard library only. Stores resumes, their versions and cover letters, renders them
   with Typst, extracts the PDF text layer with `pdftotext`, runs readability checks, and writes the Word and Markdown
   exports.
-- **Templates** (`template/resume.typ`, `template/cover-letter.typ`): Typst. Re-read on every render, so template
-  edits show up live.
+- **Templates** (`template/resume.typ`, `template/julia.typ`, `template/cover-letter.typ`): Typst. Re-read on every
+  render, so template edits show up live. See [Templates](#templates).
 - **Data** (your data folder, `~/resume-builder/` by default): one folder per resume, autosaved from the editor.
   See [Your files](#your-files).
 
@@ -102,6 +102,47 @@ checks are the resume's Parsers, Screen readers and Links checks, without the re
 dates, email); a letter longer than one page gets a note. They move, duplicate, go to `.trash` and are saved in
 versions with their resume, like the details above. Deleting a letter moves it alone to `.trash`.
 
+## Templates
+
+Each resume picks its template on the **Style** tab (saved as `style.template`; missing means Classic). Every render of
+that resume uses it: the preview, the PDF download, Sync files and saved versions. Cover letters keep
+`template/cover-letter.typ`, styled by their resume.
+
+| Template | File                 | Icons                                    |
+| -------- | -------------------- | ---------------------------------------- |
+| Classic  | `template/resume.typ` | Lucide, beside column lines              |
+| Julia    | `template/julia.typ`  | `template/icons/julia/`, beside entries, column lines and a section legend |
+
+**Julia** follows `samples/julia/Res.6.3.26-agfocus-icon2.pdf`: the name centered over a gray line of headline parts
+and contacts, section titles in the accent color, and entries as an organization line (the entry's subtitle in small
+capitals, then location and date), a bold title followed by the entry's icons, then each bullet as an indented
+paragraph. The small capitals are drawn from capitals, so every font has them, and parsers read them as capitals. Text
+after ` - ` in a title is set light (a lab or department). Its extra controls show only while it is selected:
+
+- **Icons** on each entry (sidebar entry card, or the image button on a title's page editor), drawn after the title,
+  or after the organization line when the entry has no title.
+- **Legend** on an entries section: lines with icons, printed after the section title, each line in its icon's color.
+- **Compact** on an entries section: each entry runs on one line (organization, location, title, date, then the
+  bullets in smaller type), as in the sample's education.
+- Columns sections run each column's lines together, each line's icon after it (the sample's interests).
+
+The leader, bullet and paragraph-marker styles and ALL-CAPS titles are Classic's and are hidden for Julia.
+
+**Fonts.** The sample's fonts are commercial (Houschka Pro, Adrianna Demibold, Ainslie Sans), so Julia uses free
+stand-ins bundled in `template/fonts/`: the style's font for the body (Quicksand, after Houschka Pro, for Julia's
+resume, at 8.8 pt to keep one page), and Source Sans 3 (the sample's Source Sans Pro, standing in for Adrianna too) for
+the name, section titles and bold text. Quicksand has no italics, so the italic dates and places print upright. Every
+template finds the fonts in `template/fonts/` as if installed (Typst's `--font-path`), and both are offered on the
+Style tab; drop another `.ttf`/`.otf` there to use it (only fonts whose license allows copying them, as these SIL Open
+Font License ones do, with their `OFL.txt`). The Word export names the font but doesn't embed it, so Word on a computer
+without it substitutes another.
+
+A template's icon set is a folder `template/icons/<set>/` of SVGs plus `icons.json`, listing them in picker order:
+`{"file", "name", "color"}`, where `color` is the legend label color. Add an SVG and a line to `icons.json` and it is
+offered on the next picker load, no restart needed. Julia's set holds the icons from
+`samples/julia/iconsfor resume.ai`, cropped one per file (the design/branding triangle is redrawn from the resume PDF;
+the last artboard's color studies are left out). Templates are registered in `server/templates.go`.
+
 ## Readable by people and machines
 
 Every decoration is drawn by the template as a shape, never typed as a character:
@@ -130,8 +171,9 @@ findings by reader, plus the dates:
 - **Parsers** (the `pdftotext` text layer): typed dot leaders, symbol characters (❖ ● emoji), entry titles split
   from their dates, dates without a year, and any content missing from the text layer.
 - **Screen readers** (the PDF's tags, via `pdfinfo -struct-text`): Typst's PDF/UA-1 violations (a template that
-  breaks them still renders, without the standard), content hidden from or read out of order by screen readers,
-  section titles not tagged as headings, and accent-color contrast below WCAG AA (4.5:1).
+  breaks them still renders, without the standard), content hidden from or read out of order by screen readers (an
+  entry's title, date, subtitle and location may read in any order among themselves, since templates arrange them
+  differently), section titles not tagged as headings, and accent-color contrast below WCAG AA (4.5:1).
 - **Links**: links without `https://` (or `mailto:`, `tel:`), link text naming a different address than the
   target, links not clickable in the PDF (markup in a field the template prints as plain text), and web links
   that don't open. The server requests each web link at most once every 10 minutes, separately from rendering;
@@ -159,9 +201,9 @@ Click any text on the **Page** preview to edit that value in place: a small edit
 re-renders as you type. In bullets, paragraphs, column lines and headline parts, Enter adds the next item and
 Backspace in an empty one removes it; Tab and Shift+Tab move between values. Esc closes the editor. The sidebar
 follows along: it switches to **Content** (or **Cover letters**, for a letter), expands the section and entry holding
-the value, scrolls to its field and briefly highlights it.
+the value, collapses every other section and entry, scrolls to its field and briefly highlights it.
 
-The template tags every editable value with an invisible marker (`field`/`block-field` in `template/resume.typ`);
+The template tags every editable value with an invisible marker (`field`/`block-field` in each `template/*.typ`);
 the server reads their positions with `typst eval 'query(<field>)'` and sends them with each preview. Markers don't
 change the layout or the PDF text layer. A custom template without them still renders; it just isn't clickable.
 
@@ -191,6 +233,7 @@ text. Content is rendered as literal text, so characters like `#`, `$` and `@` a
 
 Column lines can carry an icon, hung in the margin to the left of the line. Click the image button beside a line in
 the sidebar, an icon on the page, or the image button on a line's page editor, then search Lucide's icon set (Enter
-picks the first match). The icon's SVG is stored with the column (`icons`, parallel to `lines`), so the template
-needs no icon set. Icons are drawn as decorations: left out of the text layer, the screen-reader tags, the Word and
-Markdown exports and the attached JSON.
+picks the first match); a template with its own icon set lists those first. The icon's SVG is stored with the column
+(`icons`, parallel to `lines`), so the template needs no icon set. Icons are drawn as decorations: left out of the
+text layer, the screen-reader tags, the Word and Markdown exports and the attached JSON. Entry icons and legends
+(Julia) are stored the same way, as `icons` on the entry and `legend: {lines, icons}` on the section.

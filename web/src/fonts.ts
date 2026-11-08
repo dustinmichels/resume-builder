@@ -1,6 +1,7 @@
 // Fonts installed on macOS by default, so Typst can always find them, plus
-// Libertinus Serif, which Typst bundles. Hoefler Text is left out: its narrow
-// word spaces make pdftotext run words together.
+// Libertinus Serif, which Typst bundles, and the free fonts in template/fonts
+// (Quicksand, Source Sans 3). Hoefler Text is left out: its narrow word spaces
+// make pdftotext run words together.
 export const FONTS = [
   'Helvetica',
   'Helvetica Neue',
@@ -8,6 +9,8 @@ export const FONTS = [
   'Avenir Next',
   'Gill Sans',
   'Optima',
+  'Quicksand',
+  'Source Sans 3',
   'Georgia',
   'Palatino',
   'Baskerville',
