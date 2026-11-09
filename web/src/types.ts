@@ -148,8 +148,9 @@ export type LetterBlockKind = LetterBlock['kind']
 /**
  * A cover letter, saved as cover-letters/<name>.json in its resume's folder.
  * The name at the top, accent color, heading font and margin come from the
- * resume; template/cover-letter.typ renders it. Paragraphs, bullets and header
- * lines accept inline markup; the other fields are plain text.
+ * resume; its template's letter template renders it (template/cover-letter.typ
+ * for Classic, template/julia-letter.typ for Julia). Paragraphs, bullets and
+ * header lines accept inline markup; the other fields are plain text.
  */
 export interface CoverLetter {
   /** The heading above the greeting, e.g. "Cover letter". */

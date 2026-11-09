@@ -28,7 +28,7 @@ func newLibrary(t *testing.T) *library {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.h = newMux(s, "")
+	l.h = newMux(s, nil)
 	return l
 }
 

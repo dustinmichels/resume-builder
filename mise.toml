@@ -1,9 +1,21 @@
+# ==============================================================================
+# Tools
+# ==============================================================================
+
 [tools]
-air = "1.67.4"
-bun = "1.4.4"
 go = "1.27.3"
+air = "1.67.4"           # Go live reload (used by `api`)
+bun = "1.4.4"
+"npm:oxfmt" = "0.76.0"   # web formatter (used by `fmt`)
 typst = "0.15.1"
-"npm:oxfmt" = "0.76.0"
+
+# ==============================================================================
+# Development
+# ==============================================================================
+
+[tasks.dev]
+description = "Run the API and web dev servers together"
+depends = ["api", "web-after-api"]
 
 [tasks.api]
 description = "Go API server with live reload via air (http://127.0.0.1:8787)"
@@ -14,9 +26,7 @@ description = "Vite dev server (http://localhost:5180)"
 dir = "web"
 run = "bun install && bun run dev"
 
-[tasks.dev]
-description = "Run the API and web dev servers together"
-depends = ["api", "web-after-api"]
+# --- Internal helpers for `dev` -----------------------------------------------
 
 [tasks.wait-api]
 description = "Block until the API answers on 127.0.0.1:8787"
@@ -29,6 +39,10 @@ hide = true
 depends = ["wait-api"]
 run = [{ task = "web" }]
 
+# ==============================================================================
+# Build & Serve
+# ==============================================================================
+
 [tasks.build]
 description = "Build the frontend into web/dist"
 dir = "web"
@@ -39,6 +53,10 @@ description = "Build, then serve app + API from one process (http://127.0.0.1:87
 depends = ["build"]
 run = "go run ./server"
 
+# ==============================================================================
+# Quality
+# ==============================================================================
+
 [tasks.test]
 description = "Server tests"
 run = "go test ./server/"
@@ -46,3 +64,15 @@ run = "go test ./server/"
 [tasks.fmt]
 description = "Format Go (gofmt) and web (oxfmt) sources"
 run = ["go fmt ./...", "cd web && oxfmt"]
+
+# ==============================================================================
+# Release
+# ==============================================================================
+
+[tasks.package]
+description = "Build release archives (server with templates + editor bundled, plus typst) into build/release; optional version arg"
+run = "scripts/package.sh"
+
+[tasks.release]
+description = "Check the tree is clean and level with origin/main, test, package, tag, and publish a GitHub release (patch by default; or minor, major, X.Y.Z)"
+run = "scripts/release.sh"

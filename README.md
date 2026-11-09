@@ -8,12 +8,35 @@ machines (applicant tracking systems, parsers) will read from the PDF.
 - **Backend** (`server/`): Go, standard library only. Stores resumes, their versions and cover letters, renders them
   with Typst, extracts the PDF text layer with `pdftotext`, runs readability checks, and writes the Word and Markdown
   exports.
-- **Templates** (`template/resume.typ`, `template/julia.typ`, `template/cover-letter.typ`): Typst. Re-read on every
-  render, so template edits show up live. See [Templates](#templates).
+- **Templates** (`template/resume.typ`, `template/julia.typ`, and their cover letter templates
+  `template/cover-letter.typ`, `template/julia-letter.typ`): Typst. Re-read on every render, so template edits show up
+  live. See [Templates](#templates).
 - **Data** (your data folder, `~/resume-builder/` by default): one folder per resume, autosaved from the editor.
   See [Your files](#your-files).
 
-## Run it
+## Install
+
+Download the archive for your computer from the
+[latest release](https://github.com/dustinmichels/resume-builder/releases/latest) and run `resume-builder` inside it.
+The editor opens in your browser at http://127.0.0.1:8787; leave the terminal open while you use it, and press Ctrl-C to
+stop it. Each archive carries the editor, the templates and Typst, so nothing else is needed. Install Poppler for the
+machine view and the tag checks (`brew install poppler` on macOS, `poppler-utils` on Linux).
+
+The binaries are unsigned. On macOS, download with `curl` rather than a browser, which marks the file as quarantined
+and Gatekeeper then refuses to run it:
+
+```sh
+curl -fsSL https://github.com/dustinmichels/resume-builder/releases/latest/download/resume-builder-darwin-arm64.tar.gz | tar -xz
+./resume-builder-darwin-arm64/resume-builder
+```
+
+Use `darwin-amd64` on an Intel Mac. The same page has `linux-amd64`, `linux-arm64` and, as `.zip`, `windows-amd64` and
+`windows-arm64`. `-addr` changes the address, `-open=false` skips opening the browser, and `-config` picks another
+settings file. The templates are unpacked on every start into `<user cache dir>/resume-builder/template/` (on macOS
+`~/Library/Caches/resume-builder/template/`), undoing edits there; to change one, copy that folder and run with
+`-template <copy>/resume.typ`.
+
+## Run from source
 
 Prerequisites: [mise](https://mise.jdx.dev) installs `go`, `bun`, `typst` and `air` (pinned in `mise.toml`; run
 `mise install`). `pdftotext` comes from Poppler: `brew install poppler`.
@@ -31,6 +54,18 @@ The data folder you pick on first run is remembered in `<user config dir>/resume
 `~/Library/Application Support/resume-builder/config.json`); `go run ./server -config <file>` uses another settings
 file. Picking a folder with no resumes in it imports `data/resume.json` from an older checkout, or starts from a
 sample resume.
+
+## Releasing
+
+`mise run release` cuts a release from a clean `main` that's level with `origin/main`: it runs the server tests, builds
+the archives, tags `vX.Y.Z`, pushes the tag and publishes a GitHub release with the archives and `checksums.txt`.
+Versions come from the git tags: a patch bump by default, or `mise run release minor|major|X.Y.Z`; the first release is
+`v0.1.0`. It needs the [GitHub CLI](https://cli.github.com) logged in (`gh auth login`). `mise run package [version]`
+builds the archives into `build/release/` without publishing.
+
+Each archive (`scripts/package.sh`) holds `resume-builder` built with `-tags release`, which embeds `template/` and
+`web/dist/` (`bundle.go`), plus the Typst binary of the version pinned in `mise.toml`, downloaded from Typst's
+releases, and Typst's license. A release build puts its own folder first on `PATH`, so that Typst is the one it runs.
 
 ## Your files
 
@@ -88,14 +123,25 @@ The **Cover letters** tab holds any number of letters for the open resume, each 
 `cover-letters/<name>.json` in its folder; name them after the job. While that tab shows a letter, the preview,
 checks, downloads and undo follow the letter; every other tab shows the resume.
 
-`template/cover-letter.typ` follows `samples/cover-letter`: the resume's name top right in its accent color, lines of
-your choice beneath it (a new letter starts with the resume's last headline part, often the location), a heading
-with the resume's section square hung in the margin, then the greeting, paragraphs, subheadings and bullet lists, and
-an optional closing above your name. A paragraph right after another runs on with an indented first line; one after a
-heading or list starts flush. The name, accent color, heading font and margin come from the resume, so changing them
-there restyles its letters; the bottom margin is half the resume's, as in the sample. The body font and size are the
-letter's own (Libertinus Serif, which Typst bundles, by default). The template reads `data.json` as
-`{basics, style, letter}`.
+A letter renders with its resume's template's letter template, so the two always match. The name, accent color, heading
+font and margin come from the resume, so changing them there restyles its letters. The body font and size are the
+letter's own.
+
+`template/cover-letter.typ` (Classic) follows `samples/cover-letter`: the resume's name top right in its accent color,
+lines of your choice beneath it (a new letter starts with the resume's last headline part, often the location), a
+heading with the resume's section square hung in the margin, then the greeting, paragraphs, subheadings and bullet
+lists, and an optional closing above your name. A paragraph right after another runs on with an indented first line;
+one after a heading or list starts flush. The bottom margin is half the resume's, as in the sample. The body font
+defaults to Libertinus Serif, which Typst bundles.
+
+`template/julia-letter.typ` (Julia) repeats the Julia resume's header at the resume's size: the name centered over a
+gray line of the letter's header lines and the resume's contacts. The letter's title is a section title, and the
+body is indented beneath it as a section's entries are: paragraphs separated by a gap, subheadings bold like entry
+titles, bullets as indented paragraphs without markers. The margin is the resume's all round. A new letter starts in
+the resume's font at 10.5 pt.
+
+Both templates read `data.json` as `{basics, style, letter}`. The Word export of a letter follows its template too
+(see [Downloads](#downloads)).
 
 Letters autosave with the resume and are clickable on the page (Enter in a paragraph starts the next one). Their
 checks are the resume's Parsers, Screen readers and Links checks, without the resume-only ones (dot leaders, entry
@@ -105,13 +151,13 @@ versions with their resume, like the details above. Deleting a letter moves it a
 ## Templates
 
 Each resume picks its template on the **Style** tab (saved as `style.template`; missing means Classic). Every render of
-that resume uses it: the preview, the PDF download, Sync files and saved versions. Cover letters keep
-`template/cover-letter.typ`, styled by their resume.
+that resume uses it: the preview, the PDF download, Sync files and saved versions. Its cover letters use its letter
+template (see [Cover letters](#cover-letters)), styled by the resume.
 
-| Template | File                 | Icons                                    |
-| -------- | -------------------- | ---------------------------------------- |
-| Classic  | `template/resume.typ` | Lucide, beside column lines              |
-| Julia    | `template/julia.typ`  | `template/icons/julia/`, beside entries, column lines and a section legend |
+| Template | File                  | Letter                       | Icons                                    |
+| -------- | --------------------- | ---------------------------- | ---------------------------------------- |
+| Classic  | `template/resume.typ` | `template/cover-letter.typ`  | Lucide, beside column lines              |
+| Julia    | `template/julia.typ`  | `template/julia-letter.typ`  | `template/icons/julia/`, beside entries, column lines and a section legend |
 
 **Julia** follows `samples/julia/Res.6.3.26-agfocus-icon2.pdf`: the name centered over a gray line of headline parts
 and contacts, section titles in the accent color, and entries as an organization line (the entry's subtitle in small
@@ -135,7 +181,7 @@ the name, section titles and bold text. Quicksand has no italics, so the italic 
 template finds the fonts in `template/fonts/` as if installed (Typst's `--font-path`), and both are offered on the
 Style tab; drop another `.ttf`/`.otf` there to use it (only fonts whose license allows copying them, as these SIL Open
 Font License ones do, with their `OFL.txt`). The Word export names the font but doesn't embed it, so Word on a computer
-without it substitutes another.
+without it substitutes another, and draws Julia's light and medium weights in the font's regular weight.
 
 A template's icon set is a folder `template/icons/<set>/` of SVGs plus `icons.json`, listing them in picker order:
 `{"file", "name", "color"}`, where `color` is the legend label color. Add an SVG and a line to `icons.json` and it is
@@ -188,9 +234,13 @@ findings by reader, plus the dates:
 **Cover letters** tab they export the letter, named `<name> - Cover Letter - <letter>`.
 
 - **PDF**: the Typst render you see in the preview.
-- **Word** (`.docx`): the same content and style, built from native Word features so it stays editable and
-  parser-friendly: bullets are list formatting, dot leaders are tab leaders, capitals are the caps effect.
-  Column sections stack vertically instead of using tables.
+- **Word** (`.docx`): the same content and style in the resume's template layout (its letters' in their template's),
+  built from native Word features so it stays editable and parser-friendly: bullets are list formatting, dot leaders
+  are tab leaders, capitals are the caps effect, Julia's small capitals Word's small caps. Column sections stack
+  vertically instead of using tables. Julia's icons are pictures marked decorative, so screen readers skip them: SVG,
+  with a PNG copy (drawn by Typst at export) for programs that can't show SVG, such as Google Docs. A legend shares
+  its section title's line through a style separator, so the heading holds only the title. Julia's line spacing is
+  exact, matching the PDF's, so a substituted font changes only how lines wrap, not their height.
 - **Markdown** (`.md`): inline `**bold**`/`*italic*`/links kept as written, everything else escaped. The
   preview's **Markdown** tab shows it rendered or as source, updating as you type.
 - **Text** and **JSON**: the PDF text layer and the content.
@@ -235,5 +285,6 @@ Column lines can carry an icon, hung in the margin to the left of the line. Clic
 the sidebar, an icon on the page, or the image button on a line's page editor, then search Lucide's icon set (Enter
 picks the first match); a template with its own icon set lists those first. The icon's SVG is stored with the column
 (`icons`, parallel to `lines`), so the template needs no icon set. Icons are drawn as decorations: left out of the
-text layer, the screen-reader tags, the Word and Markdown exports and the attached JSON. Entry icons and legends
-(Julia) are stored the same way, as `icons` on the entry and `legend: {lines, icons}` on the section.
+text layer, the screen-reader tags, the Markdown export and the attached JSON, and marked decorative in the Word
+export. Entry icons and legends (Julia) are stored the same way, as `icons` on the entry and `legend: {lines, icons}`
+on the section.

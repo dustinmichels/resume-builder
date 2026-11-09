@@ -6,8 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"image/png"
 	"io"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -68,12 +70,9 @@ func TestMarkdownResume(t *testing.T) {
 	}
 }
 
-func TestDocxResume(t *testing.T) {
-	doc := parseDoc(t, exportDoc)
-	b, err := docxResume(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
+// docxParts unzips a Word file, failing on any part with malformed XML.
+func docxParts(t *testing.T, b []byte) map[string]string {
+	t.Helper()
 	z, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +89,9 @@ func TestDocxResume(t *testing.T) {
 			t.Fatal(err)
 		}
 		parts[f.Name] = string(body)
+		if !strings.HasSuffix(f.Name, ".xml") && !strings.HasSuffix(f.Name, ".rels") {
+			continue
+		}
 		// Word refuses files with malformed XML.
 		dec := xml.NewDecoder(bytes.NewReader(body))
 		for {
@@ -105,21 +107,89 @@ func TestDocxResume(t *testing.T) {
 			t.Errorf("missing part %s", name)
 		}
 	}
+	return parts
+}
 
-	// Every piece of content reaches the document text, markup removed.
-	text := docxText(t, parts["word/document.xml"])
-	for _, p := range contentPieces(doc) {
-		if !strings.Contains(normalize(text), normalize(p)) {
-			t.Errorf("document text missing %q", p)
+func TestDocxResume(t *testing.T) {
+	for _, template := range []string{"", "julia"} {
+		t.Run("template="+template, func(t *testing.T) {
+			doc := parseDoc(t, exportDoc)
+			doc.Style.Template = template
+			b, err := docxResume(context.Background(), doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parts := docxParts(t, b)
+
+			// Every piece of content reaches the document text, markup removed.
+			text := docxText(t, parts["word/document.xml"])
+			for _, p := range contentPieces(doc) {
+				if !strings.Contains(normalize(text), normalize(p)) {
+					t.Errorf("document text missing %q", p)
+				}
+			}
+			if strings.Contains(text, "**") || strings.Contains(text, "](") {
+				t.Errorf("inline markup leaked into document text:\n%s", text)
+			}
+			for _, url := range []string{"mailto:ada@example.com", "https://x.y/a_b", "https://ada.dev"} {
+				if !strings.Contains(parts["word/_rels/document.xml.rels"], `Target="`+url+`"`) {
+					t.Errorf("no hyperlink relationship for %s", url)
+				}
+			}
+		})
+	}
+}
+
+// Julia's icons are pictures: each placed one resolves to an SVG and a PNG
+// copy in the file, stored once however often it is placed.
+func TestDocxJuliaIcons(t *testing.T) {
+	icon := func(color string) string {
+		return `{"name": "Dot", "color": "#d36c1c", "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\" fill=\"` + color + `\"/></svg>"}`
+	}
+	doc := parseDoc(t, `{"basics": {"name": "Ada", "headline": [], "contacts": []},
+		"sections": [{"kind": "entries", "title": "Work", "legend": {"lines": ["Food", "Plain"], "icons": [`+icon("#d36c1c")+`, null]},
+			"items": [{"type": "entry", "title": "Baker", "subtitle": "Acme", "bullets": ["Baked"], "icons": [`+icon("#d36c1c")+`, `+icon("currentColor")+`]}]},
+			{"kind": "columns", "title": "Interests", "columns": [{"title": "", "lines": ["Biking", "Soccer"], "icons": [null, `+icon("currentColor")+`]}]}],
+		"style": {"accent": "#7a1a4a", "font": "Quicksand", "fontSize": 9, "margin": 0.5, "template": "julia"}}`)
+	b, err := docxResume(context.Background(), doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := docxParts(t, b)
+	body, rels := parts["word/document.xml"], parts["word/_rels/document.xml.rels"]
+
+	if n := strings.Count(body, "<w:drawing>"); n != 4 {
+		t.Errorf("%d icons placed, want 4", n)
+	}
+	media := 0
+	for name := range parts {
+		if strings.HasPrefix(name, "word/media/") {
+			media++
 		}
 	}
-	if strings.Contains(text, "**") || strings.Contains(text, "](") {
-		t.Errorf("inline markup leaked into document text:\n%s", text)
+	if media != 4 { // two distinct icons, an SVG and a PNG each
+		t.Errorf("%d media files, want 4", media)
 	}
-	for _, url := range []string{"mailto:ada@example.com", "https://x.y/a_b", "https://ada.dev"} {
-		if !strings.Contains(parts["word/_rels/document.xml.rels"], `Target="`+url+`"`) {
-			t.Errorf("no hyperlink relationship for %s", url)
+	if !strings.Contains(parts["word/media/icon2.svg"], `fill="#7A1A4A"`) {
+		t.Errorf("currentColor not drawn in the accent:\n%s", parts["word/media/icon2.svg"])
+	}
+	for _, m := range regexp.MustCompile(`r:embed="(rId[PS]\d+)"`).FindAllStringSubmatch(body, -1) {
+		target := regexp.MustCompile(`Id="` + m[1] + `" [^>]*Target="([^"]+)"`).FindStringSubmatch(rels)
+		if target == nil {
+			t.Fatalf("no relationship %s", m[1])
 		}
+		data, ok := parts["word/"+target[1]]
+		if !ok {
+			t.Fatalf("%s targets missing %s", m[1], target[1])
+		}
+		if strings.HasSuffix(target[1], ".png") {
+			if _, err := png.Decode(strings.NewReader(data)); err != nil {
+				t.Errorf("%s: %v", target[1], err)
+			}
+		}
+	}
+	if text := docxText(t, body); !strings.Contains(text, "Food") || !strings.Contains(text, "Biking") || !strings.Contains(text, "Soccer") {
+		t.Errorf("document text:\n%s", text)
 	}
 }
 
@@ -236,7 +306,7 @@ func TestHiddenParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	docxBytes, err := docxResume(doc)
+	docxBytes, err := docxResume(context.Background(), doc)
 	if err != nil {
 		t.Fatal(err)
 	}

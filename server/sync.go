@@ -93,18 +93,17 @@ func (s *server) exportFolder(ctx context.Context, folder, rel string, res *sync
 		return
 	}
 	// A letter's PDF shows its resume's name and style, so it is redrawn
-	// when the resume or the letter template changes too.
+	// when the resume or its letter template changes too.
 	resumeRaw, rerr := os.ReadFile(resumePath)
 	rfi, ferr := os.Stat(resumePath)
-	lfi, lerr := os.Stat(s.letterTemplatePath)
-	depsErr := errors.Join(rerr, ferr, lerr)
+	depsErr := errors.Join(rerr, ferr)
 	for _, l := range letters {
 		name := filepath.Join(lettersDir, l.ID+".json")
 		if depsErr != nil {
 			record(name, nil, depsErr)
 			continue
 		}
-		written, err := s.syncLetter(ctx, filepath.Join(folder, name), resumeRaw, latest(rfi.ModTime(), lfi.ModTime()))
+		written, err := s.syncLetter(ctx, filepath.Join(folder, name), resumeRaw, rfi.ModTime())
 		record(name, written, err)
 	}
 }
@@ -139,7 +138,7 @@ func (s *server) syncResume(ctx context.Context, path string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	docx, err := docxResume(doc)
+	docx, err := docxResume(ctx, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -149,8 +148,9 @@ func (s *server) syncResume(ctx context.Context, path string) ([]string, error) 
 }
 
 // syncLetter updates the exports beside the letter JSON at path; its PDF is
-// also redrawn when older than depsModified.
-func (s *server) syncLetter(ctx context.Context, path string, resumeRaw []byte, depsModified time.Time) ([]string, error) {
+// also redrawn when older than the resume (modified at resumeModified) or the
+// resume template's letter template.
+func (s *server) syncLetter(ctx context.Context, path string, resumeRaw []byte, resumeModified time.Time) ([]string, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -163,12 +163,20 @@ func (s *server) syncLetter(ctx context.Context, path string, resumeRaw []byte, 
 	if err != nil {
 		return nil, err
 	}
+	tpl, err := s.letterTemplateFile(ld.Style.Template)
+	if err != nil {
+		return nil, err
+	}
+	tfi, err := os.Stat(tpl)
+	if err != nil {
+		return nil, err
+	}
 	docx, err := docxLetter(ld)
 	if err != nil {
 		return nil, err
 	}
-	return writeExports(strings.TrimSuffix(path, ".json"), markdownLetter(ld), docx, latest(fi.ModTime(), depsModified), func() (*rendered, error) {
-		return render(ctx, s.letterTemplatePath, map[string][]byte{"data.json": data}, false)
+	return writeExports(strings.TrimSuffix(path, ".json"), markdownLetter(ld), docx, latest(fi.ModTime(), latest(resumeModified, tfi.ModTime())), func() (*rendered, error) {
+		return render(ctx, tpl, map[string][]byte{"data.json": data}, false)
 	})
 }
 

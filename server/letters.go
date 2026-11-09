@@ -408,21 +408,31 @@ func (s *server) deleteLetter(w http.ResponseWriter, r *http.Request) {
 
 // ── Rendering ───────────────────────────────────────────────────────────────
 // These take a LetterDoc: the editor sends the open letter with the resume's
-// current basics and style.
+// current basics and style, whose template picks the letter template.
 
-func (s *server) renderLetter(r *http.Request, raw []byte, svg bool) (*rendered, error) {
-	return render(r.Context(), s.letterTemplatePath, map[string][]byte{"data.json": raw}, svg)
+// renderLetter renders the LetterDoc in the request with its resume
+// template's letter template, answering the request itself on failure.
+func (s *server) renderLetter(w http.ResponseWriter, r *http.Request, svg bool) (*rendered, LetterDoc, bool) {
+	raw, ld, err := readLetterDoc(r)
+	var tpl string
+	if err == nil {
+		tpl, err = s.letterTemplateFile(ld.Style.Template)
+	}
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return nil, ld, false
+	}
+	out, err := render(r.Context(), tpl, map[string][]byte{"data.json": raw}, svg)
+	if err != nil {
+		renderError(w, err)
+		return nil, ld, false
+	}
+	return out, ld, true
 }
 
 func (s *server) letterPreview(w http.ResponseWriter, r *http.Request) {
-	raw, ld, err := readLetterDoc(r)
-	if err != nil {
-		httpError(w, http.StatusBadRequest, err)
-		return
-	}
-	out, err := s.renderLetter(r, raw, true)
-	if err != nil {
-		renderError(w, err)
+	out, ld, ok := s.renderLetter(w, r, true)
+	if !ok {
 		return
 	}
 	defer out.Close()
@@ -453,14 +463,8 @@ func (s *server) letterLinks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) letterPDF(w http.ResponseWriter, r *http.Request) {
-	raw, ld, err := readLetterDoc(r)
-	if err != nil {
-		httpError(w, http.StatusBadRequest, err)
-		return
-	}
-	out, err := s.renderLetter(r, raw, false)
-	if err != nil {
-		renderError(w, err)
+	out, ld, ok := s.renderLetter(w, r, false)
+	if !ok {
 		return
 	}
 	defer out.Close()

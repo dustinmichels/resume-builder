@@ -42,20 +42,22 @@ Upload `resume.typ`, then upload `data/resume.json` twice: once as `data.json` a
 - **No sync:** changes made in typst.app never reach the repo. Copy template edits back by hand. Content changes
   have to be made in the JSON, and the uploaded JSON goes stale when the browser editor saves.
 
-## Cover letter template
+## Cover letter templates
 
-`template/cover-letter.typ` reads only `data.json`, shaped `{basics, style, letter}`: the resume's `basics` and
-`style` plus one letter from the resume's `cover-letters/` folder. No file on disk has that shape, and the name clashes
-with the resume template's `data.json`, so build it in a scratch folder:
+A letter renders with its resume's template's letter template: `template/cover-letter.typ` for Classic,
+`template/julia-letter.typ` for Julia. Either reads only `data.json`, shaped `{basics, style, letter}`: the resume's
+`basics` and `style` plus one letter from the resume's `cover-letters/` folder. No file on disk has that shape, and the
+name clashes with the resume template's `data.json`, so build it in a scratch folder:
 
 ```sh
-mkdir -p /tmp/letter && cp template/cover-letter.typ /tmp/letter/
+mkdir -p /tmp/letter && cp template/cover-letter.typ template/julia-letter.typ /tmp/letter/
 jq -n --slurpfile r ~/resume-builder/Resume/resume.json --slurpfile l "$HOME/resume-builder/Resume/cover-letters/MPO Data Analyst.json" \
   '{basics: $r[0].basics, style: $r[0].style, letter: $l[0]}' > /tmp/letter/data.json
-typst watch /tmp/letter/cover-letter.typ
+typst watch --font-path template/fonts /tmp/letter/cover-letter.typ   # or julia-letter.typ
 ```
 
-The JSON is a snapshot: rerun `jq` to pick up edits from the browser editor.
+The JSON is a snapshot: rerun `jq` to pick up edits from the browser editor. `--font-path` finds the bundled fonts
+(Julia's Source Sans 3 and Quicksand).
 
 ## Which tool for what
 

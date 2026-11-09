@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 import type {
   Column,
   Contact,
@@ -71,9 +72,9 @@ export const newSupervisor = (entryId: string, job: string): Supervisor => ({
   canContact: false,
 })
 
-/** Deep copy with fresh ids, for "Duplicate". */
+/** Deep copy with fresh ids, for "Duplicate". `toRaw`: structuredClone rejects reactive proxies. */
 export function cloneEntry(entry: Entry): Entry {
-  return { ...structuredClone(entry), id: newId('e') }
+  return { ...structuredClone(toRaw(entry)), id: newId('e') }
 }
 
 export function newLetterBlock(kind: LetterBlockKind): LetterBlock {
@@ -90,6 +91,8 @@ const heading = (text: string): LetterBlock => ({ id: newId('b'), kind: 'heading
 /**
  * A new letter for the resume, headed by its last headline part (often the
  * location), laid out like samples/cover-letter with placeholder text to replace.
+ * Its body font is Libertinus Serif, as in the sample, except on the Julia
+ * template, whose letters start in the resume's font, as on the resume.
  */
 export function newCoverLetter(resume: ResumeDoc): CoverLetter {
   const last = resume.basics.headline.filter((h) => h.trim()).at(-1)
@@ -105,6 +108,9 @@ export function newCoverLetter(resume: ResumeDoc): CoverLetter {
       paragraph(LOREM),
     ],
     closing: 'Sincerely,',
-    style: { font: 'Libertinus Serif', fontSize: 12 },
+    style:
+      resume.style.template === 'julia'
+        ? { font: resume.style.font, fontSize: 10.5 }
+        : { font: 'Libertinus Serif', fontSize: 12 },
   }
 }

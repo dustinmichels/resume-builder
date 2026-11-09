@@ -17,7 +17,7 @@ func (s *server) reveal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cmd := openFolderCommand(rdir)
+	cmd := openCommand(rdir)
 	if err := cmd.Start(); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
@@ -27,13 +27,14 @@ func (s *server) reveal(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func openFolderCommand(path string) *exec.Cmd {
+// openCommand opens a folder or URL with the system's default handler.
+func openCommand(target string) *exec.Cmd {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", path)
+		return exec.Command("open", target)
 	case "windows":
-		return exec.Command("explorer", path)
+		return exec.Command("explorer", target)
 	default:
-		return exec.Command("xdg-open", path)
+		return exec.Command("xdg-open", target)
 	}
 }

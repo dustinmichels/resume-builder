@@ -11,13 +11,42 @@ import (
 
 func TestTemplateFile(t *testing.T) {
 	s := &server{templatePath: "../template/resume.typ"}
-	for id, want := range map[string]string{"": "../template/resume.typ", "julia": "../template/julia.typ"} {
-		if got, err := s.templateFile(id); err != nil || got != want {
-			t.Errorf("templateFile(%q) = %q, %v; want %q", id, got, err, want)
+	for id, want := range map[string][2]string{
+		"":      {"../template/resume.typ", "../template/cover-letter.typ"},
+		"julia": {"../template/julia.typ", "../template/julia-letter.typ"},
+	} {
+		if got, err := s.templateFile(id); err != nil || got != want[0] {
+			t.Errorf("templateFile(%q) = %q, %v; want %q", id, got, err, want[0])
+		}
+		if got, err := s.letterTemplateFile(id); err != nil || got != want[1] {
+			t.Errorf("letterTemplateFile(%q) = %q, %v; want %q", id, got, err, want[1])
 		}
 	}
 	if _, err := s.templateFile("x"); err == nil || err.Error() != `unknown template "x"` {
 		t.Errorf("templateFile(x) error = %v", err)
+	}
+}
+
+// A letter renders with its resume's template's letter template: Julia's
+// letterhead repeats the resume's contacts, Classic's doesn't.
+func TestLetterTemplate(t *testing.T) {
+	l := newLibrary(t)
+	doc := func(template string) string {
+		return `{"basics": {"name": "Ada Lovelace", "headline": [], "contacts": [{"text": "ada@example.com", "url": "mailto:ada@example.com"}]},
+			"style": {"accent": "#7a1a4a", "font": "Quicksand", "fontSize": 9, "margin": 0.5, "template": "` + template + `"},
+			"letter": ` + testLetter + `}`
+	}
+	for template, contacts := range map[string]bool{"": false, "julia": true} {
+		var got struct{ Text string }
+		decodeInto(t, l.call(t, "POST", "/api/letter/preview", doc(template), 200), &got)
+		if !strings.Contains(got.Text, "I would love to work at Acme.") || strings.Contains(got.Text, "ada@example.com") != contacts {
+			t.Errorf("template %q letter text:\n%s", template, got.Text)
+		}
+	}
+	var got struct{ Error string }
+	decodeInto(t, l.call(t, "POST", "/api/letter/pdf", doc("x"), 400), &got)
+	if got.Error != `unknown template "x"` {
+		t.Fatalf("error = %q", got.Error)
 	}
 }
 

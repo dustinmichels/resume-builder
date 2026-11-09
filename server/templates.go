@@ -1,9 +1,10 @@
 package main
 
 // Resume templates sit beside the -template file (the classic template), each
-// with an optional icon set of its own:
+// with the cover letter template its resumes' letters use and an optional
+// icon set of its own:
 //
-//	template/<file>.typ
+//	template/<file>.typ, <letter>.typ
 //	template/icons/<set>/icons.json, *.svg
 
 import (
@@ -26,6 +27,7 @@ type TemplateInfo struct {
 	Icons []LineIcon `json:"icons"`
 
 	file    string // beside the -template file
+	letter  string // the cover letter template, beside the -template file
 	iconSet string // icons/<iconSet> beside the -template file; "" for none
 }
 
@@ -39,20 +41,38 @@ type LineIcon struct {
 // templates lists the resume templates, classic first.
 func (s *server) templates() []TemplateInfo {
 	return []TemplateInfo{
-		{ID: "", Name: "Classic", Features: []string{"markers", "uppercaseTitles"}, file: filepath.Base(s.templatePath)},
-		{ID: "julia", Name: "Julia", Features: []string{"entryIcons", "legend", "compactEntries"}, file: "julia.typ", iconSet: "julia"},
+		{ID: "", Name: "Classic", Features: []string{"markers", "uppercaseTitles"}, file: filepath.Base(s.templatePath), letter: "cover-letter.typ"},
+		{ID: "julia", Name: "Julia", Features: []string{"entryIcons", "legend", "compactEntries"}, file: "julia.typ", letter: "julia-letter.typ", iconSet: "julia"},
 	}
 }
 
 // templateFile returns the path of the resume template with the given id
 // (a document's style.template).
 func (s *server) templateFile(id string) (string, error) {
+	t, err := s.template(id)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(s.templatePath), t.file), nil
+}
+
+// letterTemplateFile returns the path of the cover letter template for
+// resumes on the template with the given id.
+func (s *server) letterTemplateFile(id string) (string, error) {
+	t, err := s.template(id)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(s.templatePath), t.letter), nil
+}
+
+func (s *server) template(id string) (TemplateInfo, error) {
 	for _, t := range s.templates() {
 		if t.ID == id {
-			return filepath.Join(filepath.Dir(s.templatePath), t.file), nil
+			return t, nil
 		}
 	}
-	return "", fmt.Errorf("unknown template %q", id)
+	return TemplateInfo{}, fmt.Errorf("unknown template %q", id)
 }
 
 // listTemplates lists the resume templates with their icon sets, read on

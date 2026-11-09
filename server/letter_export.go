@@ -29,10 +29,14 @@ func markdownLetter(ld LetterDoc) []byte {
 	return b.bytes()
 }
 
-// docxLetter writes a cover letter as Word, mirroring template/cover-letter.typ
-// as docxResume mirrors the resume template: headings are heading styles,
-// bullets list numbering, capitals the caps effect.
+// docxLetter writes a cover letter as Word in its resume template's letter
+// layout. This one mirrors template/cover-letter.typ as docxResume mirrors the
+// resume template: headings are heading styles, bullets list numbering,
+// capitals the caps effect; docxJuliaLetter mirrors template/julia-letter.typ.
 func docxLetter(ld LetterDoc) ([]byte, error) {
+	if ld.Style.Template == "julia" {
+		return docxJuliaLetter(ld)
+	}
 	l := ld.Letter
 	d := newDocxWriter(*ld.Style)
 	d.bottom = d.st.Margin / 2 // as in the template

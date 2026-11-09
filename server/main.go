@@ -10,9 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
+	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sync"
@@ -22,10 +23,9 @@ import (
 const maxBody = 4 << 20
 
 type server struct {
-	templatePath       string
-	letterTemplatePath string // cover-letter.typ beside the resume template
-	configPath         string // where the chosen data folder is remembered
-	legacyPath         string // pre-library resume, imported when seeding a new data folder
+	templatePath string
+	configPath   string // where the chosen data folder is remembered
+	legacyPath   string // pre-library resume, imported when seeding a new data folder
 
 	mu      sync.RWMutex
 	dataDir string // "" until the user chooses a folder
@@ -36,10 +36,14 @@ type server struct {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8787", "listen address")
 	configPath := flag.String("config", "", "settings file (default <user config dir>/resume-builder/config.json)")
-	templatePath := flag.String("template", "template/resume.typ", "Typst template")
-	static := flag.String("static", "web/dist", "built frontend to serve (skipped if missing)")
+	templatePath := flag.String("template", "", "Typst resume template; the other templates sit beside it (default template/resume.typ, bundled in release builds)")
+	static := flag.String("static", "", "built editor to serve (default web/dist, bundled in release builds)")
+	open := flag.Bool("open", bundled != nil, "open the editor in the browser once serving")
 	flag.Parse()
 
+	if err := preferBundledTools(); err != nil {
+		log.Fatal(err)
+	}
 	if err := checkTools(); err != nil {
 		log.Fatal(err)
 	}
@@ -50,28 +54,50 @@ func main() {
 		}
 		*configPath = p
 	}
-	s, err := newServer(*templatePath, *configPath, "data/resume.json")
+	if *templatePath == "" {
+		dir, err := templateFolder()
+		if err != nil {
+			log.Fatal(err)
+		}
+		*templatePath = filepath.Join(dir, "resume.typ")
+	}
+	legacy := "data/resume.json" // only in a checkout of an older version
+	if bundled != nil {
+		legacy = ""
+	}
+	s, err := newServer(*templatePath, *configPath, legacy)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("resume server on http://%s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, newMux(s, *static)))
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	url := "http://" + ln.Addr().String()
+	log.Printf("resume-builder %s on %s", buildVersion, url)
+	if *open {
+		cmd := openCommand(url)
+		if err := cmd.Start(); err != nil {
+			log.Printf("opening the browser: %v", err)
+		} else {
+			go cmd.Wait()
+		}
+	}
+	log.Fatal(http.Serve(ln, newMux(s, editor(*static))))
 }
 
-// newServer loads the remembered data folder from configPath. The cover
-// letter template is read from templatePath's folder.
+// newServer loads the remembered data folder from configPath.
 func newServer(templatePath, configPath, legacyPath string) (*server, error) {
 	c, err := loadConfig(configPath)
 	if err != nil {
 		return nil, err
 	}
-	return &server{templatePath: templatePath, letterTemplatePath: filepath.Join(filepath.Dir(templatePath), "cover-letter.typ"),
-		configPath: configPath, legacyPath: legacyPath, dataDir: c.DataDir, links: newLinkChecker()}, nil
+	return &server{templatePath: templatePath, configPath: configPath, legacyPath: legacyPath, dataDir: c.DataDir, links: newLinkChecker()}, nil
 }
 
-// newMux routes the API, plus the built frontend in static if it exists.
-func newMux(s *server, static string) *http.ServeMux {
+// newMux routes the API, plus the built editor in ui if it isn't nil.
+func newMux(s *server, ui fs.FS) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
@@ -109,8 +135,8 @@ func newMux(s *server, static string) *http.ServeMux {
 	mux.HandleFunc("POST /api/letter/pdf", s.letterPDF)
 	mux.HandleFunc("POST /api/letter/docx", letterDocx)
 	mux.HandleFunc("POST /api/letter/md", letterMarkdown)
-	if fi, err := os.Stat(static); err == nil && fi.IsDir() {
-		mux.Handle("GET /", http.FileServer(http.Dir(static)))
+	if ui != nil {
+		mux.Handle("GET /", http.FileServerFS(ui))
 	}
 	return mux
 }
@@ -221,7 +247,7 @@ func docx(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	b, err := docxResume(doc)
+	b, err := docxResume(r.Context(), doc)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return

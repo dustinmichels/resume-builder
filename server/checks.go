@@ -30,31 +30,49 @@ type DocContact struct {
 // Hidden sections, items and columns stay in the saved resume but are left
 // off the page and out of every export.
 type DocSection struct {
-	Kind            string      `json:"kind"`
-	Hidden          bool        `json:"hidden"`
-	Title           string      `json:"title"`
-	Paragraphs      []string    `json:"paragraphs"`
-	UppercaseTitles bool        `json:"uppercaseTitles"`
-	Items           []DocItem   `json:"items"`
-	Variant         string      `json:"variant"`
-	Columns         []DocColumn `json:"columns"`
+	Kind            string        `json:"kind"`
+	Hidden          bool          `json:"hidden"`
+	Title           string        `json:"title"`
+	Paragraphs      []string      `json:"paragraphs"`
+	UppercaseTitles bool          `json:"uppercaseTitles"`
+	Items           []DocItem     `json:"items"`
+	Variant         string        `json:"variant"`
+	Columns         []DocColumn   `json:"columns"`
+	Compact         bool          `json:"compact"` // Julia: each entry on one line
+	Legend          *DocIconLines `json:"legend"`  // Julia: labelled icons after the title
 }
 
 type DocItem struct {
-	Type     string   `json:"type"`
-	Hidden   bool     `json:"hidden"`
-	Title    string   `json:"title"`
-	Date     string   `json:"date"`
-	Subtitle string   `json:"subtitle"`
-	Location string   `json:"location"`
-	Text     string   `json:"text"`
-	Bullets  []string `json:"bullets"`
+	Type     string      `json:"type"`
+	Hidden   bool        `json:"hidden"`
+	Title    string      `json:"title"`
+	Date     string      `json:"date"`
+	Subtitle string      `json:"subtitle"`
+	Location string      `json:"location"`
+	Text     string      `json:"text"`
+	Bullets  []string    `json:"bullets"`
+	Icons    []*LineIcon `json:"icons"` // Julia: after the title
 }
 
 type DocColumn struct {
-	Hidden bool     `json:"hidden"`
-	Title  string   `json:"title"`
-	Lines  []string `json:"lines"`
+	Hidden bool        `json:"hidden"`
+	Title  string      `json:"title"`
+	Lines  []string    `json:"lines"`
+	Icons  []*LineIcon `json:"icons"` // Julia: the icon after each line, nil for none
+}
+
+// DocIconLines are lines with an optional icon beside each, nil for none.
+type DocIconLines struct {
+	Lines []string    `json:"lines"`
+	Icons []*LineIcon `json:"icons"`
+}
+
+// iconAt returns the icon at i of icons, or nil.
+func iconAt(icons []*LineIcon, i int) *LineIcon {
+	if i < len(icons) {
+		return icons[i]
+	}
+	return nil
 }
 
 // dropHidden removes the hidden sections, items and columns, leaving what

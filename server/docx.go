@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"math"
@@ -10,10 +11,11 @@ import (
 	"strings"
 )
 
-// Word export. The document mirrors template/resume.typ with native Word
+// Word export. The document mirrors the resume's template with native Word
 // features, so the text stays clean for parsers: bullets are list numbering,
 // dot leaders are tab leaders, capitals are the caps font effect. Columns stack
-// vertically (no tables) to keep each column's words together.
+// vertically (no tables) to keep each column's words together. This file
+// writes the classic template's layout; docx_julia.go the Julia template's.
 
 const (
 	docxInk   = "373737" // luma(55) in the template
@@ -31,16 +33,34 @@ type docxWriter struct {
 	body   strings.Builder
 	links  []string // hyperlink targets; link i has relationship id rIdL<i+1>
 	bottom float64  // bottom page margin in inches; st.Margin sets the other three
+
+	// Bold text's font and size (a multiple of the surrounding text's);
+	// "" and 0 keep them.
+	strongFont  string
+	strongScale float64
+	linkColor   string // links' color; "" for the accent
+
+	// Icons, each drawn once as word/media/icon<i+1>.svg with a PNG copy
+	// for readers without SVG support; drawings counts the pictures placed.
+	icons     []string
+	iconIndex map[string]int
+	iconPNGs  [][]byte
+	drawings  int
 }
 
 type runProps struct {
-	bold, italic, caps bool
-	font               string // "" inherits
-	color              string
-	size               float64 // multiple of the base font size; 0 inherits
+	bold, italic, caps, smallCaps bool
+	font                          string // "" inherits
+	color                         string
+	size                          float64 // multiple of the base font size; 0 inherits
+	spacing                       float64 // extra space after each character, in ems of the base font size
 }
 
-func docxResume(doc Doc) ([]byte, error) {
+// docxResume writes the resume as Word in its template's layout.
+func docxResume(ctx context.Context, doc Doc) ([]byte, error) {
+	if doc.Style.Template == "julia" {
+		return docxJuliaResume(ctx, doc)
+	}
 	d := newDocxWriter(*doc.Style)
 	d.document(doc)
 	name := ""
@@ -52,7 +72,7 @@ func docxResume(doc Doc) ([]byte, error) {
 
 // newDocxWriter starts a document in style st, filling in missing values.
 func newDocxWriter(st Style) *docxWriter {
-	d := &docxWriter{st: st, accent: "000000"}
+	d := &docxWriter{st: st, accent: "000000", iconIndex: map[string]int{}}
 	if m := hexColor.FindStringSubmatch(d.st.Accent); m != nil {
 		d.accent = strings.ToUpper(m[1])
 	}
@@ -69,10 +89,21 @@ func newDocxWriter(st Style) *docxWriter {
 	return d
 }
 
-// pack zips the written body with the given styles and numbering parts.
+// pack zips the written body with the given styles and numbering parts, and
+// the icons, which drawIcons must have drawn.
 func (d *docxWriter) pack(title, author, styles, numbering string) ([]byte, error) {
+	if len(d.iconPNGs) != len(d.icons) {
+		return nil, fmt.Errorf("%d icons placed, %d drawn", len(d.icons), len(d.iconPNGs))
+	}
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
+	add := func(name string, body []byte) error {
+		f, err := z.Create(name)
+		if err == nil {
+			_, err = f.Write(body)
+		}
+		return err
+	}
 	parts := []struct{ name, body string }{
 		{"[Content_Types].xml", contentTypes},
 		{"_rels/.rels", packageRels},
@@ -83,11 +114,15 @@ func (d *docxWriter) pack(title, author, styles, numbering string) ([]byte, erro
 		{"word/document.xml", fmt.Sprintf(documentXML, d.body.String(), d.twips(d.st.Margin*72), d.twips(d.bottom*72))},
 	}
 	for _, p := range parts {
-		f, err := z.Create(p.name)
-		if err != nil {
+		if err := add(p.name, []byte(p.body)); err != nil {
 			return nil, err
 		}
-		if _, err := f.Write([]byte(p.body)); err != nil {
+	}
+	for i, svg := range d.icons {
+		if err := add(fmt.Sprintf("word/media/icon%d.svg", i+1), []byte(svg)); err != nil {
+			return nil, err
+		}
+		if err := add(fmt.Sprintf("word/media/icon%d.png", i+1), d.iconPNGs[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -217,8 +252,8 @@ func (d *docxWriter) para(pPr, runs string) {
 	d.body.WriteString("<w:p><w:pPr>" + pPr + "</w:pPr>" + runs + "</w:p>")
 }
 
-// runs renders inline nodes as Word runs; bold and italic add to props, links
-// become hyperlinks in the accent color.
+// runs renders inline nodes as Word runs; bold and italic add to props (bold
+// switches to strongFont, if set), links become hyperlinks in the link color.
 func (d *docxWriter) runs(nodes []inline, p runProps) string {
 	var b strings.Builder
 	for _, n := range nodes {
@@ -228,6 +263,12 @@ func (d *docxWriter) runs(nodes []inline, p runProps) string {
 		case inlineBold:
 			q := p
 			q.bold = true
+			if d.strongFont != "" {
+				q.font = d.strongFont
+			}
+			if d.strongScale != 0 {
+				q.size = max(q.size, 1) * d.strongScale
+			}
 			b.WriteString(d.runs(n.Kids, q))
 		case inlineItalic:
 			q := p
@@ -237,6 +278,9 @@ func (d *docxWriter) runs(nodes []inline, p runProps) string {
 			d.links = append(d.links, n.URL)
 			q := p
 			q.color = d.accent
+			if d.linkColor != "" {
+				q.color = d.linkColor
+			}
 			fmt.Fprintf(&b, `<w:hyperlink r:id="rIdL%d" w:history="1">%s</w:hyperlink>`, len(d.links), d.run(n.Text, q))
 		}
 	}
@@ -261,8 +305,14 @@ func (d *docxWriter) run(text string, p runProps) string {
 	if p.caps {
 		b.WriteString("<w:caps/>")
 	}
+	if p.smallCaps {
+		b.WriteString("<w:smallCaps/>")
+	}
 	if p.color != "" {
 		fmt.Fprintf(&b, `<w:color w:val="%s"/>`, p.color)
+	}
+	if p.spacing != 0 {
+		fmt.Fprintf(&b, `<w:spacing w:val="%d"/>`, d.em(p.spacing))
 	}
 	if p.size != 0 {
 		fmt.Fprintf(&b, `<w:sz w:val="%d"/>`, d.halfPoints(p.size))
@@ -308,6 +358,12 @@ func (d *docxWriter) documentRels() string {
 		fmt.Fprintf(&b, `<Relationship Id="rIdL%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="%s" TargetMode="External"/>`,
 			i+1, xmlText(strings.ReplaceAll(strings.TrimSpace(u), " ", "%20")))
 	}
+	for i := range d.icons {
+		for _, ext := range []string{"svg", "png"} {
+			fmt.Fprintf(&b, `<Relationship Id="rId%s%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/icon%[2]d.%[3]s"/>`,
+				strings.ToUpper(ext[:1]), i+1, ext)
+		}
+	}
 	return fmt.Sprintf(documentRelsXML, b.String())
 }
 
@@ -335,7 +391,7 @@ func xmlText(s string) string {
 }
 
 const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`
 
 const packageRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`
@@ -348,7 +404,7 @@ const documentRelsXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 // documentXML takes the body paragraphs, the page margin and the bottom margin in twips.
 const documentXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>%s<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="%[2]d" w:right="%[2]d" w:bottom="%[3]d" w:left="%[2]d" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>%s<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="%[2]d" w:right="%[2]d" w:bottom="%[3]d" w:left="%[2]d" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`
 
 // stylesXML takes: font, size, ink, paragraph spacing; title spacing, accent,
 // size; heading 1 before, after, accent, size; heading 2 leader, tab position,
