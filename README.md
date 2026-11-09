@@ -3,6 +3,9 @@
 A local resume editor: edit content in the browser or the Mac app, see the exact PDF pages as you type, and check what
 machines (applicant tracking systems, parsers) will read from the PDF.
 
+**Documentation: [dustinmichels.github.io/resume-builder](https://dustinmichels.github.io/resume-builder/)** (source in
+`docs/`, a [VitePress](https://vitepress.dev) site deployed to GitHub Pages by `.github/workflows/docs.yml`).
+
 - **Frontend** (`web/`): Vue 3 + Vite, run with Bun. Forms, drag-and-drop reordering, click-to-edit on the live
   preview, rich-text formatting.
 - **Backend** (`server/`): Go, standard library only (the Mac app adds [Wails](https://v3.wails.io)). Stores resumes,
@@ -22,9 +25,15 @@ Download [Resume-Builder.dmg](https://github.com/dustinmichels/resume-builder/re
 open it, and drag **Resume Builder** to **Applications**. Then open it from Applications or Launchpad like any other
 app. It runs on macOS 13 (Ventura) or later, on Apple Silicon and Intel Macs.
 
+Or, with [Homebrew](https://brew.sh), which also installs Poppler:
+
+```sh
+brew install --cask dustinmichels/tap/resume-builder
+```
+
 On first run, choose where to keep your resumes. The machine view ("What machines read") and the screen-reader and
-PDF-link checks need Poppler, which the app doesn't include yet; if you have Homebrew, `brew install poppler` turns
-them on. The app logs to `~/Library/Logs/Resume Builder/` (Help → Show Log File).
+PDF-link checks need Poppler, which the app doesn't include yet; if you installed the app from the disk image and have
+Homebrew, `brew install poppler` turns them on. The app logs to `~/Library/Logs/Resume Builder/` (Help → Show Log File).
 
 #### Updates
 
@@ -69,7 +78,8 @@ mise run dev     # API on 127.0.0.1:8787 (rebuilt by air on server/*.go changes)
 mise run serve   # build the editor, then serve everything from http://127.0.0.1:8787
 mise run app     # build the editor, then run the desktop app (a native window instead of the browser)
 mise run test    # server tests
-mise run cleanup # delete generated files: build/, tmp/, web/dist/
+mise run cleanup # delete generated files: build/, tmp/, web/dist/, the docs build
+mise run docs    # the documentation site (docs/) on http://localhost:5173/resume-builder/
 ```
 
 The desktop app is the same server built with `-tags desktop` (`server/desktop.go`): a [Wails v3](https://v3.wails.io)
@@ -94,8 +104,14 @@ notarization will work, runs the server tests, builds the archives and the Mac a
 `vX.Y.Z`, pushes the tag and publishes a GitHub release with `Resume-Builder.dmg`, `Resume-Builder.zip`, the archives
 and `checksums.txt`. Nothing is tagged until notarization has passed. Versions come from the git tags: a patch bump by
 default, or `mise run release minor|major|X.Y.Z`; the first release is `v0.1.0`. It needs the
-[GitHub CLI](https://cli.github.com) logged in (`gh auth login`). `mise run package [version]` builds everything into
-`build/release/` without publishing; elsewhere than macOS it skips the Mac app.
+[GitHub CLI](https://cli.github.com) logged in (`gh auth login`) and able to push to
+[dustinmichels/homebrew-tap](https://github.com/dustinmichels/homebrew-tap). `mise run package [version]` builds
+everything into `build/release/` without publishing; elsewhere than macOS it skips the Mac app.
+
+Last, it runs `scripts/update-cask.sh <version>`, which downloads the published `Resume-Builder.dmg`, hashes it, and
+commits the new `version` and `sha256` to `Casks/resume-builder.rb` in the tap through the GitHub API. If that step
+fails, the release is already out; rerun `mise run cask` (latest release) or `scripts/update-cask.sh <version>`.
+Rerunning is a no-op when the cask already matches.
 
 Each archive (`scripts/package.sh`) holds `resume-builder` built with `-tags release`, which embeds `template/` and
 `web/dist/` (`bundle.go`), plus the Typst binary of the version pinned in `mise.toml`, downloaded from Typst's

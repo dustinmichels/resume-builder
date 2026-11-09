@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Test, package, tag, and publish a GitHub release with the archives and the
 # signed, notarized Mac app (Resume-Builder.dmg, and Resume-Builder.zip for
-# in-app updates) from scripts/package.sh. macOS only.
+# in-app updates) from scripts/package.sh, then point the Homebrew cask at it
+# (scripts/update-cask.sh). macOS only.
 #
 # Usage: scripts/release.sh [patch|minor|major|X.Y.Z]   (default: patch)
 #   Versions come from the vX.Y.Z git tags; with none yet, a bump releases 0.1.0.
@@ -31,6 +32,7 @@ git fetch --quiet --tags origin main
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] ||
   die "main and origin/main differ; push or pull first"
 gh auth status >/dev/null 2>&1 || die "gh is not logged in; run 'gh auth login'"
+scripts/update-cask.sh --check
 
 # The Mac app is signed and notarized while packaging, before anything is
 # tagged, so a failure there publishes nothing. Check its prerequisites first.
@@ -83,6 +85,10 @@ step "Tagging $tag and publishing the GitHub release"
 git tag -a "$tag" -m "Resume Builder $version"
 git push origin "$tag"
 gh release create "$tag" build/release/* --verify-tag --title "Resume Builder $version" --generate-notes
+
+step "Updating the Homebrew cask"
+scripts/update-cask.sh "$version" ||
+  die "$tag is published, but the Homebrew cask wasn't updated; rerun 'scripts/update-cask.sh $version'"
 
 echo
 echo "Released $(gh release view "$tag" --json url --jq .url)"

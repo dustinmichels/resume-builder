@@ -49,8 +49,8 @@ dir = "web"
 run = "bun install && bun run build"
 
 [tasks.cleanup]
-description = "Delete generated files: build/ (release output, typst download cache), tmp/ (air), web/dist/"
-run = "rm -rf build tmp web/dist"
+description = "Delete generated files: build/ (release output, typst download cache), tmp/ (air), web/dist/, the docs build"
+run = "rm -rf build tmp web/dist docs/.vitepress/dist docs/.vitepress/cache"
 
 [tasks.serve]
 description = "Build, then serve app + API from one process (http://127.0.0.1:8787)"
@@ -76,6 +76,20 @@ description = "Format Go (gofmt) and web (oxfmt) sources"
 run = ["go fmt ./...", "cd web && oxfmt"]
 
 # ==============================================================================
+# Docs
+# ==============================================================================
+
+[tasks.docs]
+description = "VitePress dev server for the docs site (http://localhost:5173/resume-builder/)"
+dir = "docs"
+run = "bun install && bun run dev"
+
+[tasks.docs-build]
+description = "Build the docs site into docs/.vitepress/dist (deployed to GitHub Pages by .github/workflows/docs.yml)"
+dir = "docs"
+run = "bun install && bun run build"
+
+# ==============================================================================
 # Release
 # ==============================================================================
 
@@ -84,5 +98,9 @@ description = "Build release archives (server with templates + editor bundled, p
 run = "scripts/package.sh"
 
 [tasks.release]
-description = "Check the tree is clean and level with origin/main, check signing and notarization, test, package (archives + DMG), tag, and publish a GitHub release (patch by default; or minor, major, X.Y.Z)"
+description = "Check the tree is clean and level with origin/main, check signing and notarization, test, package (archives + DMG), tag, publish a GitHub release (patch by default; or minor, major, X.Y.Z), and update the Homebrew cask"
 run = "scripts/release.sh"
+
+[tasks.cask]
+description = "Point the Homebrew cask in dustinmichels/homebrew-tap at a release (default: the latest)"
+run = "scripts/update-cask.sh"
