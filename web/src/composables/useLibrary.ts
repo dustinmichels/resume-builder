@@ -1,6 +1,7 @@
 import { shallowRef } from 'vue'
 import { api } from '../api'
 import { runInApp } from '../desktop'
+import { normalizeImport } from '../factory'
 import { formatDateTime } from '../format'
 import type { DocSummary, Settings, Version } from '../types'
 import { useResumeDoc } from './useResumeDoc'
@@ -81,6 +82,23 @@ export function useLibrary() {
     await switchTo(id)
   }
 
+  /**
+   * Creates a resume from a resume JSON file's text: a saved resume.json, or the JSON download.
+   * Returns the template the file names if this version doesn't have it (the resume gets Classic).
+   */
+  async function importJson(name: string, text: string): Promise<string | undefined> {
+    let raw: unknown
+    try {
+      raw = JSON.parse(text)
+    } catch (e) {
+      throw new Error(`Not a JSON file: ${e instanceof Error ? e.message : e}`)
+    }
+    const { id, unknownTemplate } = await api.importResume(name, normalizeImport(raw))
+    await refresh()
+    await switchTo(id)
+    return unknownTemplate
+  }
+
   async function duplicate(name: string) {
     const id = await resume.withSaved((from) => api.createResume(name, { resume: from }))
     await refresh()
@@ -144,6 +162,7 @@ export function useLibrary() {
     setDataDir,
     switchTo,
     create,
+    importJson,
     duplicate,
     rename,
     remove,

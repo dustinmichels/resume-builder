@@ -85,6 +85,10 @@ export const api = {
     const body = { name, from: from?.resume, version: from?.version }
     return (await fetchJSON('/api/resumes', send('POST', JSON.stringify(body)))).id
   },
+  /** Creates a resume from an imported document; style settings it lacks are the starter's. */
+  async importResume(name: string, doc: unknown): Promise<{ id: string; unknownTemplate?: string }> {
+    return fetchJSON('/api/resumes', send('POST', JSON.stringify({ name, doc })))
+  },
   async getResume(id: string): Promise<ResumeDoc> {
     return fetchJSON(resumePath(id))
   },

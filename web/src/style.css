@@ -1,5 +1,5 @@
 :root {
-  /* --accent is overwritten at runtime with the resume's own accent color. */
+  /* The app's own color; a resume's accent (style.accent) colors only its PDF. */
   --accent: #7a1a4a;
   --ink: #1d2430;
   --muted: #5d6675;

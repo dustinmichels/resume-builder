@@ -75,12 +75,18 @@ let savedTimer: ReturnType<typeof setTimeout> | undefined
 const actionError = shallowRef<string | null>(null)
 const prompt = shallowRef<PromptRequest | null>(null)
 const sidebar = useTemplateRef<HTMLElement>('sidebar')
+const importInput = useTemplateRef<HTMLInputElement>('importInput')
 const revealing = provideReveal()
 provideTemplate(() => doc.value?.style)
 const syncing = shallowRef(false)
 /** What the last sync did; cleared once the saved resume changes. */
 const synced = shallowRef<string | null>(null)
-watch(currentId, () => (synced.value = null))
+/** Why the resume just imported doesn't look like its file; it goes once another resume opens. */
+const importWarning = shallowRef<{ id: string; text: string } | null>(null)
+watch(currentId, (id) => {
+  synced.value = null
+  if (importWarning.value?.id !== id) importWarning.value = null
+})
 watch(status, (s) => {
   if (s !== 'saved') synced.value = null
 })
@@ -93,7 +99,6 @@ const STATUS_LABELS = {
   error: 'Not saved',
 } as const
 
-const accentStyle = computed(() => (doc.value ? { '--accent': doc.value.style.accent } : {}))
 const fileBase = computed(() => {
   const name = doc.value?.basics.name || 'Resume'
   return onLetter.value ? `${name} - Cover Letter - ${letterId.value}` : `${name} - Resume`
@@ -160,10 +165,9 @@ function downloadText() {
 
 function downloadJson() {
   if (!doc.value) return
-  const { basics, sections } = doc.value
-  // Content only, as for the resume: no style.
+  // The whole resume, style included, so Import JSON… brings back its template; a letter's content only.
   const { style: _, ...letterContent } = letterDoc.value?.letter ?? {}
-  const content = letterDoc.value ? { name: basics.name, ...letterContent } : { basics, sections }
+  const content = letterDoc.value ? { name: doc.value.basics.name, ...letterContent } : doc.value
   saveFile('other', 'Saving the JSON', () => new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }), `${fileBase.value}.json`)
 }
 
@@ -256,6 +260,35 @@ function promptCreate() {
   }
 }
 
+/** Asks for the name of the resume in the picked JSON file, named after the file (less the download's " - Resume"). */
+async function onImportPicked() {
+  const input = importInput.value
+  const file = input?.files?.[0]
+  if (!input || !file) return
+  input.value = '' // picking the same file again still fires change
+  actionError.value = null
+  let text: string
+  try {
+    text = await file.text()
+  } catch (e) {
+    actionError.value = `Could not read ${file.name}: ${e instanceof Error ? e.message : e}`
+    return
+  }
+  prompt.value = {
+    title: 'Import resume',
+    message: `Creates a resume from ${file.name}. Style settings the file lacks come from the Classic template, as does a template this version doesn't have.`,
+    value: file.name.replace(/\.json$/i, '').replace(/ - Resume$/, ''),
+    placeholder: 'Name',
+    confirmLabel: 'Import',
+    run: async (name) => {
+      const unknown = await library.importJson(name, text)
+      if (unknown && currentId.value) {
+        importWarning.value = { id: currentId.value, text: `This version has no “${unknown}” template, so the imported resume uses Classic.` }
+      }
+    },
+  }
+}
+
 function promptDuplicate() {
   prompt.value = {
     title: `Duplicate “${currentId.value}”`,
@@ -307,7 +340,7 @@ function promptSettings() {
     :default-data-dir="settings.defaultDataDir"
     :choose="library.setDataDir"
   />
-  <div v-else class="app" :style="accentStyle">
+  <div v-else class="app">
     <header class="toolbar">
       <ResumeMenu
         :resumes="resumes"
@@ -315,6 +348,7 @@ function promptSettings() {
         @open="library.refresh().catch(() => {})"
         @select="switchResume"
         @create="promptCreate"
+        @import="importInput?.click()"
         @duplicate="promptDuplicate"
         @rename="promptRename"
         @remove="promptDelete"
@@ -368,6 +402,9 @@ function promptSettings() {
       </div>
       <span v-if="actionError || saveError || exportError" class="toolbar-error" role="alert">
         {{ actionError ?? exportError ?? saveError }}
+      </span>
+      <span v-else-if="importWarning && importWarning.id === currentId" class="toolbar-error warning" role="status" :title="importWarning.text">
+        {{ importWarning.text }}
       </span>
       <div class="actions">
         <DownloadMenu :items="downloadItems" :busy-label="downloadMenuLabel" />
@@ -468,6 +505,7 @@ function promptSettings() {
     </main>
 
     <PromptDialog v-model="prompt" />
+    <input ref="importInput" type="file" accept=".json,application/json" hidden @change="onImportPicked" />
   </div>
 </template>
 
@@ -555,6 +593,10 @@ function promptSettings() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.toolbar-error.warning {
+  color: var(--warn);
 }
 
 .actions {

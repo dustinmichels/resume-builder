@@ -14,6 +14,7 @@ const emit = defineEmits<{
   open: []
   select: [id: string]
   create: []
+  import: []
   duplicate: []
   rename: []
   remove: []
@@ -57,6 +58,7 @@ function choose(action: () => void) {
       </div>
       <hr class="rule" />
       <button class="item" type="button" role="menuitem" @click="choose(() => emit('create'))">New resume…</button>
+      <button class="item" type="button" role="menuitem" @click="choose(() => emit('import'))">Import JSON…</button>
       <template v-if="current">
         <button class="item" type="button" role="menuitem" @click="choose(() => emit('duplicate'))">Duplicate…</button>
         <button class="item" type="button" role="menuitem" @click="choose(() => emit('rename'))">Rename…</button>

@@ -48,6 +48,10 @@ description = "Build the frontend into web/dist"
 dir = "web"
 run = "bun install && bun run build"
 
+[tasks.cleanup]
+description = "Delete generated files: build/ (release output, typst download cache), tmp/ (air), web/dist/"
+run = "rm -rf build tmp web/dist"
+
 [tasks.serve]
 description = "Build, then serve app + API from one process (http://127.0.0.1:8787)"
 depends = ["build"]

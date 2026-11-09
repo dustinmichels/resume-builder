@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,6 +195,77 @@ func TestCreateResumes(t *testing.T) {
 
 	l.call(t, "POST", "/api/resumes", `{"name":"x","from":"Nope"}`, 404)
 	l.call(t, "POST", "/api/resumes", `{"name":"x","version":"`+v.ID+`"}`, 400)
+}
+
+func TestImportResume(t *testing.T) {
+	l := newLibrary(t)
+	l.choose(t)
+	importedAs := func(name, doc string) (saved []byte, unknownTemplate string) {
+		t.Helper()
+		var got struct{ ID, UnknownTemplate string }
+		decodeInto(t, l.call(t, "POST", "/api/resumes", `{"name":"`+name+`","doc":`+doc+`}`, 201), &got)
+		return l.call(t, "GET", "/api/resumes/"+url.PathEscape(got.ID), "", 200), got.UnknownTemplate
+	}
+	imported := func(name, doc string) []byte {
+		t.Helper()
+		saved, unknown := importedAs(name, doc)
+		if unknown != "" {
+			t.Errorf("import %s: unknown template %q", name, unknown)
+		}
+		return saved
+	}
+
+	// A complete resume.json is saved as written.
+	want, err := indentJSON([]byte(exportDoc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := imported("Saved", exportDoc); !bytes.Equal(got, want) {
+		t.Fatalf("imported resume.json:\n%s", got)
+	}
+
+	// Missing style settings come from the starter; text stays unescaped.
+	var starter struct{ Style map[string]json.RawMessage }
+	decodeInto(t, starterJSON, &starter)
+	for _, c := range []struct{ style, template, accent string }{
+		{``, "", `"#7a1a4a"`},              // no style: Classic
+		{`,"style":null`, "", `"#7a1a4a"`}, // the same
+		{`,"style":{"template":"julia","accent":"#123456"}`, "julia", `"#123456"`}, // some settings
+	} {
+		var doc struct {
+			Basics struct{ Name string }
+			Style  map[string]json.RawMessage
+		}
+		decodeInto(t, imported("Partial", `{"basics":{"name":"A & B <C>"},"sections":[]`+c.style+`}`), &doc)
+		var template string
+		if v, ok := doc.Style["template"]; ok {
+			decodeInto(t, v, &template)
+		}
+		if doc.Basics.Name != "A & B <C>" || template != c.template || string(doc.Style["accent"]) != c.accent ||
+			string(doc.Style["fontSize"]) != string(starter.Style["fontSize"]) {
+			t.Errorf("imported with style %s: %+v", c.style, doc)
+		}
+	}
+
+	// A template this build doesn't have gives way to Classic, and the response names it.
+	saved, unknown := importedAs("Unknown", `{"basics":{},"sections":[],"style":{"template":"nope","accent":"#123456"}}`)
+	var doc struct{ Style map[string]json.RawMessage }
+	decodeInto(t, saved, &doc)
+	if _, ok := doc.Style["template"]; ok || unknown != "nope" || string(doc.Style["accent"]) != `"#123456"` {
+		t.Errorf("import with an unknown template: %q, %s", unknown, saved)
+	}
+
+	for _, body := range []string{
+		`{"name":"x","doc":null}`,
+		`{"name":"x","doc":[]}`,
+		`{"name":"x","doc":{"basics":{}}}`,                                          // no sections
+		`{"name":"x","doc":{"name":"Ada","paragraphs":[]}}`,                         // a cover letter
+		`{"name":"x","doc":{"basics":{},"sections":[],"style":[]}}`,                 // style not an object
+		`{"name":"x","doc":{"basics":{},"sections":[],"style":{"fontSize":"big"}}}`, // a setting of the wrong type
+		`{"name":"x","from":"Saved","doc":{"basics":{},"sections":[]}}`,             // not a copy
+	} {
+		l.call(t, "POST", "/api/resumes", body, 400)
+	}
 }
 
 func TestRenameAndDelete(t *testing.T) {

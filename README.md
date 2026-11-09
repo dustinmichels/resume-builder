@@ -69,6 +69,7 @@ mise run dev     # API on 127.0.0.1:8787 (rebuilt by air on server/*.go changes)
 mise run serve   # build the editor, then serve everything from http://127.0.0.1:8787
 mise run app     # build the editor, then run the desktop app (a native window instead of the browser)
 mise run test    # server tests
+mise run cleanup # delete generated files: build/, tmp/, web/dist/
 ```
 
 The desktop app is the same server built with `-tags desktop` (`server/desktop.go`): a [Wails v3](https://v3.wails.io)
@@ -304,7 +305,11 @@ where to save the file.
   exact, matching the PDF's, so a substituted font changes only how lines wrap, not their height.
 - **Markdown** (`.md`): inline `**bold**`/`*italic*`/links kept as written, everything else escaped. The
   preview's **Markdown** tab shows it rendered or as source, updating as you type.
-- **Text** and **JSON**: the PDF text layer and the content.
+- **Text** and **JSON**: the PDF text layer and the resume as saved, style and template included (for a letter, its
+  content). **Import JSON…** in the resume menu turns a JSON download, or any resume's `resume.json`, into a new
+  resume. Missing fields are filled in (empty text and lists, new ids, the Classic template's style settings), a
+  section without a `kind` gets the one its fields imply. The new resume opens on the template the file names; if
+  this version doesn't have it, it gets Classic and the toolbar says so.
 
 ## Editing
 

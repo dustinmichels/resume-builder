@@ -551,13 +551,29 @@ func (s *server) listResumes(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name    string `json:"name"`
-		From    string `json:"from"`
-		Version string `json:"version"`
+		Name    string          `json:"name"`
+		From    string          `json:"from"`
+		Version string          `json:"version"`
+		Doc     json.RawMessage `json:"doc"` // an imported resume
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		httpError(w, http.StatusBadRequest, err)
 		return
+	}
+	files := map[string][]byte{resumeFile: starterJSON}
+	var unknownTemplate string
+	if body.Doc != nil {
+		if body.From != "" || body.Version != "" {
+			httpError(w, http.StatusBadRequest, errors.New("an imported resume is not a copy"))
+			return
+		}
+		doc, unknown, err := s.importedResume(body.Doc)
+		if err != nil {
+			httpError(w, http.StatusBadRequest, err)
+			return
+		}
+		files[resumeFile] = doc
+		unknownTemplate = unknown
 	}
 	dir, unlock, ok := s.lockDir(w, true)
 	if !ok {
@@ -565,7 +581,6 @@ func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 	}
 	defer unlock()
 
-	files := map[string][]byte{resumeFile: starterJSON}
 	switch {
 	case body.From != "":
 		rdir, ok := resumeDir(w, dir, body.From)
@@ -605,7 +620,73 @@ func (s *server) createResume(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSONStatus(w, http.StatusCreated, map[string]string{"id": id})
+	writeJSONStatus(w, http.StatusCreated, struct {
+		ID              string `json:"id"`
+		UnknownTemplate string `json:"unknownTemplate,omitempty"` // dropped from an imported resume
+	}{id, unknownTemplate})
+}
+
+// importedResume checks an imported resume as a save does, and indents it.
+// Style settings it lacks come from the starter's, so a file without a style
+// gets the Classic template. A template this build doesn't have gives way to
+// Classic too; unknown is its id.
+func (s *server) importedResume(raw []byte) (doc []byte, unknown string, err error) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil, "", fmt.Errorf("invalid resume JSON: %w", err)
+	}
+	if top != nil {
+		var style map[string]json.RawMessage
+		if v, ok := top["style"]; ok {
+			if err := json.Unmarshal(v, &style); err != nil {
+				return nil, "", fmt.Errorf("invalid resume style: %w", err)
+			}
+		}
+		// A template that isn't a string fails decodeDoc below.
+		var template string
+		if json.Unmarshal(style["template"], &template) == nil {
+			if _, err := s.template(template); err != nil {
+				delete(style, "template")
+				unknown = template
+			}
+		}
+		var starter struct{ Style map[string]json.RawMessage }
+		if err := json.Unmarshal(starterJSON, &starter); err != nil {
+			return nil, "", err
+		}
+		changed := style == nil || unknown != "" // style missing or null
+		if style == nil {
+			style = make(map[string]json.RawMessage, len(starter.Style))
+		}
+		for k, v := range starter.Style {
+			if _, ok := style[k]; !ok {
+				style[k] = v
+				changed = true
+			}
+		}
+		if changed {
+			if top["style"], err = encodeJSON(style); err != nil {
+				return nil, "", err
+			}
+			if raw, err = encodeJSON(top); err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	if _, err := decodeDoc(raw); err != nil {
+		return nil, "", err
+	}
+	doc, err = indentJSON(raw)
+	return doc, unknown, err
+}
+
+// encodeJSON marshals v without escaping <, > and &, which resume text uses.
+func encodeJSON(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(v)
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), err
 }
 
 func (s *server) getResume(w http.ResponseWriter, r *http.Request) {
@@ -631,12 +712,11 @@ func (s *server) putResume(w http.ResponseWriter, r *http.Request) {
 // writeResumeFile saves raw JSON, indented, as file name (a path relative to
 // the folder, created as needed) of the resume in the URL.
 func (s *server) writeResumeFile(w http.ResponseWriter, r *http.Request, name string, raw []byte) {
-	var pretty bytes.Buffer
-	if err := json.Indent(&pretty, raw, "", "  "); err != nil {
+	pretty, err := indentJSON(raw)
+	if err != nil {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	pretty.WriteByte('\n')
 
 	dir, unlock, ok := s.lockDir(w, true)
 	if !ok {
@@ -652,7 +732,7 @@ func (s *server) writeResumeFile(w http.ResponseWriter, r *http.Request, name st
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := writeFileAtomic(p, pretty.Bytes()); err != nil {
+	if err := writeFileAtomic(p, pretty); err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
 	}
