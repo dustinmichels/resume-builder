@@ -21,7 +21,7 @@ type TemplateInfo struct {
 	ID   string `json:"id"` // "" = classic
 	Name string `json:"name"`
 	// Features are what the template draws beyond the common schema:
-	// markers | uppercaseTitles | entryIcons | legend | compactEntries.
+	// markers | uppercaseTitles | entryIcons | legend | compactEntries | entryBrackets.
 	Features []string `json:"features"`
 	// Icons are the template's icon set, [] for none.
 	Icons []LineIcon `json:"icons"`
@@ -42,7 +42,7 @@ type LineIcon struct {
 func (s *server) templates() []TemplateInfo {
 	return []TemplateInfo{
 		{ID: "", Name: "Classic", Features: []string{"markers", "uppercaseTitles"}, file: filepath.Base(s.templatePath), letter: "cover-letter.typ"},
-		{ID: "julia", Name: "Julia", Features: []string{"entryIcons", "legend", "compactEntries"}, file: "julia.typ", letter: "julia-letter.typ", iconSet: "julia"},
+		{ID: "julia", Name: "Julia", Features: []string{"entryIcons", "legend", "compactEntries", "entryBrackets"}, file: "julia.typ", letter: "julia-letter.typ", iconSet: "julia"},
 	}
 }
 

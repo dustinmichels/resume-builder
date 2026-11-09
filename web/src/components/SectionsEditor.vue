@@ -15,8 +15,7 @@ const ADD_OPTIONS: { kind: SectionKind; label: string; hint: string }[] = [
   { kind: 'columns', label: 'Columns', hint: 'Skills table, languages' },
 ]
 
-function remove(index: number) {
-  const section = sections.value[index]!
+function remove(section: Section) {
   prompt.value = {
     title: `Delete ${section.title || 'this section'} and everything in it?`,
     confirmLabel: 'Delete',
@@ -38,7 +37,7 @@ function remove(index: number) {
         :key="section.id"
         :model-value="section"
         :path="`sections.${i}`"
-        @remove="remove(i)"
+        @remove="remove(section)"
       />
     </VueDraggable>
 

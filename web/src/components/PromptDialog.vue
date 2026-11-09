@@ -144,12 +144,6 @@ form {
   min-width: 0;
 }
 
-.error {
-  margin: 0;
-  color: var(--error);
-  font-size: 13px;
-}
-
 .buttons {
   display: flex;
   justify-content: flex-end;

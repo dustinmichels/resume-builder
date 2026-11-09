@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, shallowRef } from 'vue'
 
 /**
  * An optional color: a swatch and a Show toggle. Off is stored as no key (undefined); the color is kept while off so
@@ -8,7 +8,7 @@ import { computed, ref } from 'vue'
 const color = defineModel<string | undefined>()
 const { label, initial } = defineProps<{ label: string; /** The color Show first turns on. */ initial: string }>()
 
-const kept = ref(color.value || initial)
+const kept = shallowRef(color.value || initial)
 const swatch = computed({
   get: () => color.value || kept.value,
   set: (c: string) => {

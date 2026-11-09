@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Test, package, tag, and publish a GitHub release with the archives and the
-# signed, notarized Resume-Builder.dmg from scripts/package.sh. macOS only.
+# signed, notarized Mac app (Resume-Builder.dmg, and Resume-Builder.zip for
+# in-app updates) from scripts/package.sh. macOS only.
 #
 # Usage: scripts/release.sh [patch|minor|major|X.Y.Z]   (default: patch)
 #   Versions come from the vX.Y.Z git tags; with none yet, a bump releases 0.1.0.
@@ -72,7 +73,9 @@ go test ./server/
 step "Packaging"
 scripts/package.sh "$tag"
 [ -z "$(git status --porcelain)" ] || die "packaging changed tracked files; commit them and rerun"
-[ -f build/release/Resume-Builder.dmg ] || die "packaging produced no Resume-Builder.dmg"
+for f in Resume-Builder.dmg Resume-Builder.zip; do
+  [ -f "build/release/$f" ] || die "packaging produced no $f"
+done
 
 # --- Tag and publish ---
 

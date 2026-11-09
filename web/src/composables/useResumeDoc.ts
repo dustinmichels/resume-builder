@@ -3,7 +3,7 @@ import { api } from '../api'
 import { jobLabel } from '../format'
 import type { ContactInfo, CoverLetter, ResumeDoc, SupervisorsDoc } from '../types'
 
-export type SaveStatus = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error'
+type SaveStatus = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error'
 
 const AUTOSAVE_MS = 800
 
@@ -135,8 +135,7 @@ export function useResumeDoc(id: Readonly<Ref<string | null>>) {
   /** Closes the documents without saving (their resume was deleted or the data folder changed). */
   function unload() {
     clearTimeout(timer)
-    doc.value = contact.value = supervisors.value = null
-    letter.value = null
+    doc.value = contact.value = supervisors.value = letter.value = null
     letterId.value = null
     for (const f of files) f.saved = ''
     docId = null

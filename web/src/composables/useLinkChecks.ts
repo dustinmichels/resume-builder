@@ -14,13 +14,10 @@ export function useLinkChecks(kind: DocKind, doc: Readonly<Ref<PageDoc | null>>)
   const checks = shallowRef<Check[] | null>(null)
   const error = shallowRef<string | null>(null)
 
-  watch(
-    () => doc.value,
-    () => {
-      checks.value = null
-      error.value = null
-    },
-  )
+  watch(doc, () => {
+    checks.value = null
+    error.value = null
+  })
 
   watch(
     () => (doc.value ? JSON.stringify(doc.value) : null),

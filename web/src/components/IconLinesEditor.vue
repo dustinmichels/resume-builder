@@ -6,12 +6,7 @@ import StringList from './StringList.vue'
 
 /** A column's or legend's lines, each with its icon button; icons stay beside their lines. */
 const owner = defineModel<IconLines>({ required: true })
-const {
-  path,
-  addLabel,
-  sortable = false,
-  labelColors = false,
-} = defineProps<{
+const { path, addLabel, sortable, labelColors } = defineProps<{
   /** Field path of the column or legend, e.g. "sections.2.legend". */
   path: string
   addLabel: string

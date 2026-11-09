@@ -36,7 +36,8 @@ const {
   remove: removeLetter,
 } = useCoverLetters(currentId, library.resume)
 
-const panel = shallowRef<'content' | 'style' | 'letters' | 'contact' | 'supervisors' | 'versions'>('content')
+const PANELS = { content: 'Content', style: 'Style', letters: 'Cover letters', contact: 'Contact', supervisors: 'Supervisors', versions: 'Versions' } as const
+const panel = shallowRef<keyof typeof PANELS>('content')
 
 /** The open letter with its resume's name and style, while the Cover letters tab shows it. */
 const letterDoc = computed<LetterDoc | null>(() =>
@@ -172,9 +173,11 @@ const downloadItems = computed<DownloadItem[]>(() => [
   { label: 'Markdown (.md)', disabled: !doc.value || !!exporting.value, action: () => downloadExport('md') },
   { label: 'Word (.docx)', disabled: !doc.value || !!exporting.value, action: () => downloadExport('docx') },
 ])
-const downloadMenuLabel = computed(() =>
-  exporting.value && exporting.value !== 'pdf' ? 'Exporting…' : saved.value && saved.value !== 'pdf' ? 'Saved' : null,
-)
+const downloadMenuLabel = computed(() => {
+  if (exporting.value && exporting.value !== 'pdf') return 'Exporting…'
+  if (saved.value && saved.value !== 'pdf') return 'Saved'
+  return null
+})
 
 /**
  * Shows a value opened on the page in its panel (Content, or Cover letters for
@@ -385,12 +388,9 @@ function promptSettings() {
     <main class="workspace">
       <aside ref="sidebar" class="editor">
         <div class="editor-tabs" role="tablist">
-          <button role="tab" :aria-selected="panel === 'content'" @click="panel = 'content'">Content</button>
-          <button role="tab" :aria-selected="panel === 'style'" @click="panel = 'style'">Style</button>
-          <button role="tab" :aria-selected="panel === 'letters'" @click="panel = 'letters'">Cover letters</button>
-          <button role="tab" :aria-selected="panel === 'contact'" @click="panel = 'contact'">Contact</button>
-          <button role="tab" :aria-selected="panel === 'supervisors'" @click="panel = 'supervisors'">Supervisors</button>
-          <button role="tab" :aria-selected="panel === 'versions'" @click="panel = 'versions'">Versions</button>
+          <button v-for="(label, key) in PANELS" :key="key" role="tab" :aria-selected="panel === key" @click="panel = key">
+            {{ label }}
+          </button>
         </div>
 
         <div v-if="!doc || !contact || !supervisors || !currentId" class="editor-empty">{{ saveError ?? 'Loading resume…' }}</div>

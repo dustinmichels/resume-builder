@@ -86,26 +86,27 @@ const PAGE_W = 612
 const PAGE_H = 792
 const CARD_GAP = 6
 
-const fieldsByPage = computed(() => {
-  const byPage = new Map<number, FieldBox[]>()
-  for (const field of preview?.fields ?? []) {
-    const list = byPage.get(field.page)
-    if (list) list.push(field)
-    else byPage.set(field.page, [field])
+/** A length in points as a CSS percentage of the page's `size`. */
+const pct = (points: number, size: number) => `${(points / size) * 100}%`
+
+function groupBy<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>()
+  for (const item of items) {
+    const k = key(item)
+    const group = groups.get(k)
+    if (group) group.push(item)
+    else groups.set(k, [item])
   }
-  return byPage
-})
+  return groups
+}
+
+const fieldsByPage = computed(() => groupBy(preview?.fields ?? [], (f) => f.page))
 
 /** Field paths in page order, for Tab and Shift+Tab. */
 const fieldOrder = computed(() => [...new Set((preview?.fields ?? []).map((f) => f.path))])
 
 function boxStyle(f: FieldBox) {
-  return {
-    left: `${(f.x / PAGE_W) * 100}%`,
-    top: `${(f.y / PAGE_H) * 100}%`,
-    width: `${(f.w / PAGE_W) * 100}%`,
-    height: `${(f.h / PAGE_H) * 100}%`,
-  }
+  return { left: pct(f.x, PAGE_W), top: pct(f.y, PAGE_H), width: pct(f.w, PAGE_W), height: pct(f.h, PAGE_H) }
 }
 
 // ── Column dividers on the Page tab ─────────────────────────────────────────
@@ -134,13 +135,7 @@ interface Divider {
 const MIN_SHARE = 0.1
 
 const dividers = computed(() => {
-  const bySection = new Map<string, FieldBox[]>()
-  for (const cell of preview?.columns ?? []) {
-    const section = cell.path.replace(/\.columns\.\d+$/, '')
-    const cells = bySection.get(section)
-    if (cells) cells.push(cell)
-    else bySection.set(section, [cell])
-  }
+  const bySection = groupBy(preview?.columns ?? [], (cell) => cell.path.replace(/\.columns\.\d+$/, ''))
   const out: Divider[] = []
   // Cells come in document order, which is left to right.
   for (const cells of bySection.values()) {
@@ -168,21 +163,19 @@ const dividers = computed(() => {
   return out
 })
 
-const dividersByPage = computed(() => {
-  const byPage = new Map<number, Divider[]>()
-  for (const d of dividers.value) {
-    const list = byPage.get(d.page)
-    if (list) list.push(d)
-    else byPage.set(d.page, [d])
-  }
-  return byPage
-})
+const dividersByPage = computed(() => groupBy(dividers.value, (d) => d.page))
 
 /** A divider being dragged, or dropped and waiting for the render that moves it there. */
 const held = shallowRef<{ path: string; x: number; from: number; dragging: boolean } | null>(null)
 watch([() => preview, () => doc], () => {
   held.value = null
 })
+
+/** The drag in progress on `d`, if any. */
+function dragOf(d: Divider) {
+  const h = held.value
+  return h?.dragging && h.path === d.left.path ? h : null
+}
 
 function dividerX(d: Divider) {
   return held.value?.path === d.left.path ? held.value.x : d.left.x + d.left.w + d.half
@@ -195,11 +188,7 @@ function clampDivider(d: Divider, x: number) {
 }
 
 function dividerStyle(d: Divider) {
-  return {
-    left: `${(dividerX(d) / PAGE_W) * 100}%`,
-    top: `${(d.top / PAGE_H) * 100}%`,
-    height: `${((d.bottom - d.top) / PAGE_H) * 100}%`,
-  }
+  return { left: pct(dividerX(d), PAGE_W), top: pct(d.top, PAGE_H), height: pct(d.bottom - d.top, PAGE_H) }
 }
 
 function columnOf(path: string): Column | undefined {
@@ -238,24 +227,24 @@ function dragStart(d: Divider, e: PointerEvent) {
 }
 
 function dragMove(d: Divider, e: PointerEvent) {
-  const h = held.value
-  if (!h?.dragging || h.path !== d.left.path) return
+  const h = dragOf(d)
+  if (!h) return
   const page = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect()
   held.value = { ...h, x: clampDivider(d, ((e.clientX - page.left) / page.width) * PAGE_W) }
 }
 
 function dragEnd(d: Divider) {
-  const h = held.value
-  if (!h?.dragging || h.path !== d.left.path) return
+  const h = dragOf(d)
+  if (!h) return
   held.value = { ...h, dragging: false }
   moveDivider(d, h.x, h.from)
 }
 
 /** Arrow keys move the divider by 1% of the line, 5% with Shift. */
 function nudge(d: Divider, e: KeyboardEvent) {
-  const dir = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
-  if (!dir) return
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
   e.preventDefault()
+  const dir = e.key === 'ArrowLeft' ? -1 : 1
   const from = dividerX(d)
   const x = clampDivider(d, from + dir * (e.shiftKey ? 0.05 : 0.01) * d.lineW)
   held.value = { path: d.left.path, x, from, dragging: false }
@@ -321,15 +310,14 @@ function step(direction: 1 | -1) {
     next += direction
   } else {
     // A new empty item has no box yet; it sits right after the anchor's field.
-    const at = anchor.value ? order.indexOf(anchor.value.path) : -1
-    next = at < 0 ? (direction > 0 ? 0 : -1) : direction > 0 ? at + 1 : at
+    next = anchor.value ? order.indexOf(anchor.value.path) : -1
+    if (direction > 0) next++
   }
   navigate(order[(next + order.length) % order.length]!)
 }
 
 // Another resume, another tab, or a sidebar change that removed the value.
-watch(() => doc, close)
-watch(tab, close)
+watch([() => doc, tab], close)
 watch(
   () => activePath.value !== null && !(doc && resolves(doc, activePath.value)),
   (stale) => {
@@ -350,25 +338,24 @@ function place(reposition: boolean) {
   if (!pages || !scroller || !box) return
   const page = pages.querySelectorAll<HTMLElement>(':scope > .page')[box.page - 1]
   if (!page) return
-  const scale = page.offsetWidth / PAGE_W
-  const left = page.offsetLeft + box.x * scale
-  const top = page.offsetTop + box.y * (page.offsetHeight / PAGE_H)
-  const bottom = top + box.h * (page.offsetHeight / PAGE_H)
+  const scaleY = page.offsetHeight / PAGE_H
+  const left = page.offsetLeft + box.x * (page.offsetWidth / PAGE_W)
+  const top = page.offsetTop + box.y * scaleY
+  const height = box.h * scaleY
   const card = cardEl.value
   let above = cardPos.value?.above ?? false
   if (reposition) {
     const view = scroller.getBoundingClientRect()
     let viewTop = pages.getBoundingClientRect().top + top
-    if (viewTop < view.top || viewTop + bottom - top > view.bottom) {
+    if (viewTop < view.top || viewTop + height > view.bottom) {
       scroller.scrollTop += viewTop - view.top - view.height / 3
       viewTop = pages.getBoundingClientRect().top + top
     }
     const cardHeight = card?.offsetHeight || 160
-    const viewBottom = viewTop + bottom - top
-    above = viewBottom + CARD_GAP + cardHeight > view.bottom && viewTop - CARD_GAP - cardHeight >= view.top
+    above = viewTop + height + CARD_GAP + cardHeight > view.bottom && viewTop - CARD_GAP - cardHeight >= view.top
   }
   const maxLeft = pages.clientWidth - (card?.offsetWidth || 380)
-  cardPos.value = { left: Math.max(0, Math.min(left, maxLeft)), top: above ? top - CARD_GAP : bottom + CARD_GAP, above }
+  cardPos.value = { left: Math.max(0, Math.min(left, maxLeft)), top: above ? top - CARD_GAP : top + height + CARD_GAP, above }
 }
 
 watch([anchor, editorKey], ([, key], [, oldKey]) => place(key !== oldKey), { flush: 'post' })
@@ -406,7 +393,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
         <button role="tab" :aria-selected="tab === 'checks'" class="tab" @click="tab = 'checks'">
           Checks
           <span v-if="preview" class="badge" :class="issues.length ? 'bad' : 'good'">
-            {{ issues.length ? issues.length : '✓' }}
+            {{ issues.length || '✓' }}
           </span>
         </button>
       </div>
@@ -448,7 +435,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
                 v-for="d in dividersByPage.get(i + 1)"
                 :key="d.left.path"
                 class="divider"
-                :class="{ dragging: held?.dragging && held.path === d.left.path }"
+                :class="{ dragging: dragOf(d) }"
                 :style="dividerStyle(d)"
                 role="separator"
                 aria-orientation="vertical"

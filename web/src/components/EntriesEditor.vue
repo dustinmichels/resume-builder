@@ -2,7 +2,7 @@
 import { shallowRef } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { cloneEntry, newEntry, newLabel } from '../factory'
-import type { Entry, EntryItem } from '../types'
+import type { EntryItem } from '../types'
 import EntryCard from './EntryCard.vue'
 import PromptDialog, { type PromptRequest } from './PromptDialog.vue'
 import RichText from './RichText.vue'
@@ -12,8 +12,7 @@ const items = defineModel<EntryItem[]>({ required: true })
 const { path } = defineProps<{ /** Field path of the items array. */ path: string }>()
 const prompt = shallowRef<PromptRequest | null>(null)
 
-function remove(index: number) {
-  const item = items.value[index]!
+function remove(item: EntryItem) {
   const name = item.type === 'entry' ? item.title : item.text
   const run = () => {
     const i = items.value.indexOf(item)
@@ -21,10 +20,6 @@ function remove(index: number) {
   }
   if (!name) return run()
   prompt.value = { title: `Delete “${name}”?`, confirmLabel: 'Delete', danger: true, run }
-}
-
-function duplicate(index: number) {
-  items.value.splice(index + 1, 0, cloneEntry(items.value[index] as Entry))
 }
 </script>
 
@@ -37,8 +32,8 @@ function duplicate(index: number) {
           v-if="item.type === 'entry'"
           :model-value="item"
           :path="`${path}.${i}`"
-          @remove="remove(i)"
-          @duplicate="duplicate(i)"
+          @remove="remove(item)"
+          @duplicate="items.splice(i + 1, 0, cloneEntry(item))"
         />
         <div v-else class="label-row" :class="{ 'is-hidden': item.hidden }">
           <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
@@ -49,7 +44,7 @@ function duplicate(index: number) {
             aria-label="Subheading"
           />
           <VisibilityToggle v-model="item.hidden" name="subheading" />
-          <button class="icon-btn danger" type="button" title="Delete subheading" @click="remove(i)">×</button>
+          <button class="icon-btn danger" type="button" title="Delete subheading" @click="remove(item)">×</button>
         </div>
       </template>
     </VueDraggable>

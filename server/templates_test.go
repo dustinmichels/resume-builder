@@ -77,7 +77,7 @@ func TestListTemplates(t *testing.T) {
 	if err := json.Unmarshal(b, &set); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(julia.Features, ",") != "entryIcons,legend,compactEntries" || len(julia.Icons) != len(set) {
+	if strings.Join(julia.Features, ",") != "entryIcons,legend,compactEntries,entryBrackets" || len(julia.Icons) != len(set) {
 		t.Fatalf("julia = %d icons (want %d), features %q", len(julia.Icons), len(set), julia.Features)
 	}
 	if ic := julia.Icons[0]; ic.Name != "Food access" || ic.Color != "#d36c1c" || !strings.HasPrefix(ic.SVG, "<svg ") || !strings.HasSuffix(ic.SVG, "</svg>") {

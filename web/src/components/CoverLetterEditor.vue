@@ -198,10 +198,4 @@ async function removeEmpty(index: number) {
   padding: 3px 9px;
   font-size: 13px;
 }
-
-.style-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 14px;
-}
 </style>

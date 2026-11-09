@@ -26,13 +26,24 @@ On first run, choose where to keep your resumes. The machine view ("What machine
 PDF-link checks need Poppler, which the app doesn't include yet; if you have Homebrew, `brew install poppler` turns
 them on. The app logs to `~/Library/Logs/Resume Builder/` (Help → Show Log File).
 
+#### Updates
+
+The app checks GitHub for a newer release when it opens and once a day while it's open. It stays quiet unless there is
+one; **Resume Builder → Check for Updates…** checks right away and also tells you when you're up to date or GitHub
+couldn't be reached. Nothing is downloaded without asking: a new release brings up **Update**, **Later** and **Release
+Notes**. Update opens a window that downloads the new version and checks it against the release's checksums; then
+**Restart & Apply** replaces the app and reopens it (or close the window to keep working, and check again later). Your
+resumes aren't touched. A copy that can't replace itself, because it was opened from the disk image or sits in a folder
+you can't change, offers **Download** instead, which gets the new `Resume-Builder.dmg` to drag over the old app.
+
 ### Command line
 
 Every [release](https://github.com/dustinmichels/resume-builder/releases/latest) also has an archive per platform with
 `resume-builder` to run from a terminal. The editor opens in your browser at http://127.0.0.1:8787; leave the terminal
 open while you use it, and press Ctrl-C to stop it. Each archive carries the editor, the templates and Typst, so nothing
 else is needed. Install Poppler for the machine view and the tag checks (`brew install poppler` on macOS,
-`poppler-utils` on Linux).
+`poppler-utils` on Linux). When a newer release is out, `resume-builder` says so in its log on start, with a link;
+update by downloading the new archive the same way.
 
 The command-line binaries are unsigned. On macOS, download with `curl` rather than a browser, which marks the file as
 quarantined and Gatekeeper then refuses to run it:
@@ -63,8 +74,9 @@ mise run test    # server tests
 The desktop app is the same server built with `-tags desktop` (`server/desktop.go`): a [Wails v3](https://v3.wails.io)
 window shows the editor, served straight from the server's handler with no network port, and native dialogs stand in
 for what a web view can't do (downloads become a Save dialog, links open in the default browser, "Choose…" picks the
-data folder). It needs CGO and Xcode's command line tools; the command-line builds don't, and don't include Wails.
-The editor knows it's in the app from `desktop: true` on `GET /api/settings`.
+data folder). It needs CGO and Xcode's command line tools; the command-line builds don't, and use only Wails' updater
+package (pure Go) to look for new releases. The editor knows it's in the app from `desktop: true` on `GET /api/settings`.
+Builds of a release (`buildVersion` a `vX.Y.Z` tag) look for updates; development builds never do.
 
 Without mise: install `go`, `bun` and `typst` (`brew install typst`) yourself, then run `go run ./server` in one
 terminal and `cd web && bun install && bun run dev` in another.
@@ -78,11 +90,11 @@ sample resume.
 
 `mise run release` cuts a release from a clean `main` that's level with `origin/main`, on a Mac: it checks signing and
 notarization will work, runs the server tests, builds the archives and the Mac app, signs and notarizes the app, tags
-`vX.Y.Z`, pushes the tag and publishes a GitHub release with `Resume-Builder.dmg`, the archives and `checksums.txt`.
-Nothing is tagged until notarization has passed. Versions come from the git tags: a patch bump by default, or
-`mise run release minor|major|X.Y.Z`; the first release is `v0.1.0`. It needs the
+`vX.Y.Z`, pushes the tag and publishes a GitHub release with `Resume-Builder.dmg`, `Resume-Builder.zip`, the archives
+and `checksums.txt`. Nothing is tagged until notarization has passed. Versions come from the git tags: a patch bump by
+default, or `mise run release minor|major|X.Y.Z`; the first release is `v0.1.0`. It needs the
 [GitHub CLI](https://cli.github.com) logged in (`gh auth login`). `mise run package [version]` builds everything into
-`build/release/` without publishing; elsewhere than macOS it skips the DMG.
+`build/release/` without publishing; elsewhere than macOS it skips the Mac app.
 
 Each archive (`scripts/package.sh`) holds `resume-builder` built with `-tags release`, which embeds `template/` and
 `web/dist/` (`bundle.go`), plus the Typst binary of the version pinned in `mise.toml`, downloaded from Typst's
@@ -91,7 +103,10 @@ releases, and Typst's license. A release build puts its own folder first on `PAT
 The Mac app (`scripts/package-macos.sh`) is `Resume Builder.app` with universal (arm64 + x86_64) builds of
 `resume-builder` (`-tags "release desktop production"`) and Typst in `Contents/MacOS/`, and the icon
 (`macos/AppIcon.icns`, made from `macos/icon.svg` by `scripts/icon.sh`, which also writes `server/icon.png`, the Dock
-icon the app sets at run time so `mise run app` shows it too). Signing needs, once per Mac:
+icon the app sets at run time so `mise run app` shows it too). `Resume-Builder.zip` holds the same app alone: the
+in-app update (`server/desktop_update.go`, using Wails' `pkg/updater`) downloads it from the latest release, checks it
+against `checksums.txt`, and swaps it in for the running app, so keep those asset names and the `vX.Y.Z` tags. Signing
+needs, once per Mac:
 
 1. A **Developer ID Application** certificate in the Keychain (developer.apple.com → Certificates, or Xcode →
    Settings → Accounts → Manage Certificates); `security find-identity -v -p codesigning` lists it. Back up its private
@@ -212,6 +227,9 @@ after ` - ` in a title is set light (a lab or department). Its extra controls sh
   section's legend has its own.
 - **Compact** on an entries section: each entry runs on one line (organization, location, title, date, then the
   bullets in smaller type), as in the sample's education.
+- **Bracket** on an entries section: one thin gray bracket in the gutter beside the section's entries, from the first
+  line to the last, continued on the next page when the section breaks (stored as `"brackets": true` on the section).
+  Drawn outside the text's bounds, so it moves no text and keeps the page count; the Word export leaves it out.
 - Columns sections run each column's lines together, each line's icon after it (the sample's interests).
 
 The leader, bullet and paragraph-marker styles and ALL-CAPS titles are Classic's and are hidden for Julia.

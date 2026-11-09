@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build release files into build/release: for each platform, an archive of the
 # server with the templates and editor bundled (-tags release), plus the pinned
-# typst and its license; on macOS also Resume-Builder.dmg, the Mac app
-# (scripts/package-macos.sh). Names carry no version, so
+# typst and its license; on macOS also the Mac app, as Resume-Builder.dmg to
+# install and Resume-Builder.zip for its updates (scripts/package-macos.sh).
+# Names carry no version, so
 # https://github.com/dustinmichels/resume-builder/releases/latest/download/<name>
 # always points at the newest release.
 #
@@ -79,13 +80,15 @@ if [ "$(uname -s)" = Darwin ]; then
     build/stage/typst-aarch64-apple-darwin/typst-aarch64-apple-darwin \
     build/stage/typst-x86_64-apple-darwin/typst-x86_64-apple-darwin
 else
-  echo "==> Skipping Resume-Builder.dmg: the Mac app can only be built on macOS"
+  echo "==> Skipping Resume-Builder.dmg and .zip: the Mac app can only be built on macOS"
 fi
 
 (
   cd "$out"
   files=(resume-builder-*)
-  [ ! -f Resume-Builder.dmg ] || files+=(Resume-Builder.dmg)
+  for f in Resume-Builder.dmg Resume-Builder.zip; do
+    [ ! -f "$f" ] || files+=("$f")
+  done
   shasum -a 256 "${files[@]}" >checksums.txt
 )
 rm -rf build/stage

@@ -48,6 +48,7 @@ func serveBrowser(h http.Handler, addr string, open bool) error {
 	}
 	url := "http://" + ln.Addr().String()
 	log.Printf("resume-builder %s on %s", buildVersion, url)
+	go logUpdate()
 	if open {
 		cmd := openCommand(url)
 		if err := cmd.Start(); err != nil {

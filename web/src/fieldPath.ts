@@ -171,7 +171,9 @@ const LETTER_BLOCKS = { paragraph: 'Paragraph', heading: 'Subheading', bullets: 
 export function describe(doc: PageDoc, path: string): string {
   const [root, a, field, b, sub] = path.split('.')
   if (root === 'basics') {
-    return a === 'name' ? 'Name' : a === 'headline' ? 'Headline part' : 'Contact link'
+    if (a === 'name') return 'Name'
+    if (a === 'headline') return 'Headline part'
+    return 'Contact link'
   }
   if (root === 'letter') {
     if (a !== 'blocks') return LETTER_FIELDS[a!] ?? 'Text'
@@ -192,8 +194,8 @@ export function describe(doc: PageDoc, path: string): string {
   }
   if (field === 'columns' && section.kind === 'columns') {
     if (sub === 'title') return 'Column heading'
-    if (sub === 'icons') return `Icon${inName(section.columns[Number(b)]?.title || section.title)}`
-    return `Line${inName(section.columns[Number(b)]?.title || section.title)}`
+    const where = inName(section.columns[Number(b)]?.title || section.title)
+    return sub === 'icons' ? `Icon${where}` : `Line${where}`
   }
   return 'Text'
 }

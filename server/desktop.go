@@ -21,6 +21,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
 const (
@@ -43,6 +44,9 @@ var (
 var appIcon []byte
 
 func init() {
+	// Restart & Apply (desktop_update.go) reruns the app to swap in the update
+	// once this copy has quit; that run does only the swap, and exits.
+	updater.HandleHelperMode()
 	serve = serveApp
 	fail = failApp
 	native = dialogs{}
@@ -56,7 +60,7 @@ func init() {
 // serveApp shows the editor in the app window until the app quits.
 func serveApp(h http.Handler, _ string, _ bool) error {
 	log.Printf("resume-builder %s (app)", buildVersion)
-	newApp(h)
+	newApp(h, true)
 	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:      appName,
 		Width:      1360, // size when un-maximised
@@ -74,7 +78,7 @@ func serveApp(h http.Handler, _ string, _ bool) error {
 func failApp(err error) {
 	log.Print(err)
 	if app == nil {
-		newApp(http.NotFoundHandler())
+		newApp(http.NotFoundHandler(), false)
 	}
 	msg := err.Error()
 	if logPath != "" {
@@ -90,9 +94,10 @@ func failApp(err error) {
 	os.Exit(1)
 }
 
-// newApp sets app, serving the window from h. A second launch focuses the
-// running app's window instead.
-func newApp(h http.Handler) {
+// newApp sets app, serving the window from h, and with updates turns on
+// update checks in builds of a release. A second launch focuses the running
+// app's window instead.
+func newApp(h http.Handler, updates bool) {
 	app = application.New(application.Options{
 		Name:        appName,
 		Description: "Version " + strings.TrimPrefix(buildVersion, "v"),
@@ -110,10 +115,26 @@ func newApp(h http.Handler) {
 			},
 		},
 	})
+	updates = updates && startUpdates()
 
 	// The Edit menu is what makes Cmd-C/V/X/A/Z reach text fields in a web view.
 	menu := app.Menu.New()
-	menu.AddRole(application.AppMenu)
+	if updates {
+		// The standard app menu (application.AppMenu), plus Check for Updates….
+		m := menu.AddSubmenu(appName)
+		m.AddRole(application.About)
+		m.Add("Check for Updates…").OnClick(func(*application.Context) { go checkForUpdate(true) })
+		m.AddSeparator()
+		m.AddRole(application.ServicesMenu)
+		m.AddSeparator()
+		m.AddRole(application.Hide)
+		m.AddRole(application.HideOthers)
+		m.AddRole(application.UnHide)
+		m.AddSeparator()
+		m.AddRole(application.Quit)
+	} else {
+		menu.AddRole(application.AppMenu)
+	}
 	menu.AddRole(application.FileMenu)
 	menu.AddRole(application.EditMenu)
 	menu.AddRole(application.WindowMenu)

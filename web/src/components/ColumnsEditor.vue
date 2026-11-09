@@ -11,19 +11,13 @@ const columns = defineModel<Column[]>({ required: true })
 const { path } = defineProps<{ /** Field path of the columns array. */ path: string }>()
 const prompt = shallowRef<PromptRequest | null>(null)
 
-function remove(index: number) {
-  const col = columns.value[index]!
+function remove(col: Column) {
   const run = () => {
     const i = columns.value.indexOf(col)
     if (i >= 0) columns.value.splice(i, 1)
   }
   if (!col.title) return run()
-  prompt.value = {
-    title: `Delete column “${col.title}”?`,
-    confirmLabel: 'Delete',
-    danger: true,
-    run,
-  }
+  prompt.value = { title: `Delete column “${col.title}”?`, confirmLabel: 'Delete', danger: true, run }
 }
 </script>
 
@@ -35,9 +29,7 @@ function remove(index: number) {
           <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
           <input v-model="col.title" :data-path="`${path}.${i}.title`" class="input column-title" placeholder="Column heading" />
           <VisibilityToggle v-model="col.hidden" name="column" />
-          <button class="icon-btn danger" type="button" title="Delete column" @click="remove(i)">
-            ×
-          </button>
+          <button class="icon-btn danger" type="button" title="Delete column" @click="remove(col)">×</button>
         </div>
         <div class="column-lines">
           <!-- IconLinesEditor edits the column in place; it never replaces it. -->

@@ -173,6 +173,7 @@ function onKeydown(e: KeyboardEvent) {
 <style scoped>
 .field-editor {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   width: min(380px, 100%);
   padding: 6px 10px 10px;

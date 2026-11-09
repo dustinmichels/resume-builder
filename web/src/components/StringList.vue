@@ -6,13 +6,7 @@ import { sortCommaList } from '../rich'
 import RichText from './RichText.vue'
 
 const items = defineModel<string[]>({ required: true })
-const {
-  path,
-  addLabel = 'Add',
-  rich = false,
-  placeholder = '',
-  sortable = false,
-} = defineProps<{
+const { path, addLabel = 'Add', rich, placeholder = '', sortable } = defineProps<{
   /** Field path of the array; rows are tagged "<path>.<i>". */
   path: string
   addLabel?: string
@@ -43,10 +37,6 @@ async function add() {
   splice(items.value.length, 0, 1)
   await nextTick()
   rows.value?.querySelector<HTMLElement>('.row:last-child .input')?.focus()
-}
-
-function remove(index: number) {
-  splice(index, 1)
 }
 
 async function insertAfter(index: number) {
@@ -99,7 +89,7 @@ async function removeEmpty(index: number) {
           >
             <ArrowDownAZ :size="15" aria-hidden="true" />
           </button>
-          <button class="icon-btn danger" type="button" title="Remove" :aria-label="`Remove item ${i + 1}`" @click="remove(i)">
+          <button class="icon-btn danger" type="button" title="Remove" :aria-label="`Remove item ${i + 1}`" @click="splice(i, 1)">
             ×
           </button>
         </div>

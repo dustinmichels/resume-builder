@@ -26,18 +26,16 @@ const describe = (v: Version) => v.label || 'Untitled version'
 
 async function load() {
   const id = props.resumeId
-  let list: Version[]
   try {
-    list = await api.listVersions(id)
+    const list = await api.listVersions(id)
+    if (id !== props.resumeId) return
+    versions.value = list
+    error.value = null
   } catch (e) {
     if (id === props.resumeId) error.value = `Could not load versions: ${e instanceof Error ? e.message : e}`
-    return
   } finally {
     if (id === props.resumeId) loading.value = false
   }
-  if (id !== props.resumeId) return
-  versions.value = list
-  error.value = null
 }
 
 watch(
@@ -154,12 +152,6 @@ function remove(version: Version) {
 .btn:disabled {
   opacity: 0.6;
   cursor: default;
-}
-
-.error {
-  margin: 0;
-  color: var(--error);
-  font-size: 13px;
 }
 
 .empty {

@@ -95,12 +95,6 @@ const markers = computed(() => hasFeature(templateOf(style.value), 'markers'))
 </template>
 
 <style scoped>
-.style-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 14px;
-}
-
 .color {
   display: flex;
   align-items: center;

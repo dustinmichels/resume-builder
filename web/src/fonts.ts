@@ -2,7 +2,7 @@
 // Libertinus Serif, which Typst bundles, and the free fonts in template/fonts
 // (Quicksand, Source Sans 3). Hoefler Text is left out: its narrow word spaces
 // make pdftotext run words together.
-export const FONTS = [
+const FONTS = [
   'Helvetica',
   'Helvetica Neue',
   'Arial',

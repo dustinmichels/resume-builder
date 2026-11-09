@@ -16,9 +16,9 @@ const emit = defineEmits<{ remove: [] }>()
 
 const template = useTemplate()
 
-// Entries sections only; a legend without lines is dropped.
-function setCompact(s: EntriesSection, on: boolean) {
-  s.compact = on || undefined
+// Entries sections only; an option left off is dropped, as is a legend without lines.
+function setFlag(s: EntriesSection, key: 'compact' | 'brackets', on: boolean) {
+  s[key] = on || undefined
 }
 function addLegend(s: EntriesSection) {
   s.legend = { lines: [''] }
@@ -81,9 +81,17 @@ const count = computed(() => {
           <input
             type="checkbox"
             :checked="section.compact"
-            @change="setCompact(section, ($event.target as HTMLInputElement).checked)"
+            @change="setFlag(section, 'compact', ($event.target as HTMLInputElement).checked)"
           />
           Compact: one line per entry
+        </label>
+        <label v-if="section.kind === 'entries' && hasFeature(template, 'entryBrackets')" class="check">
+          <input
+            type="checkbox"
+            :checked="section.brackets"
+            @change="setFlag(section, 'brackets', ($event.target as HTMLInputElement).checked)"
+          />
+          Bracket beside entries
         </label>
         <label v-if="section.kind === 'columns'" class="field">
           <span class="field-label">Layout</span>

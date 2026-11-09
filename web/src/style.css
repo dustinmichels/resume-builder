@@ -93,6 +93,18 @@ textarea.input {
   color: var(--muted);
 }
 
+.style-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+}
+
+.error {
+  margin: 0;
+  color: var(--error);
+  font-size: 13px;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;

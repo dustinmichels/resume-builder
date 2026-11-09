@@ -16,6 +16,8 @@ package main
 // - In the letter, the dots and diamonds the template draws are typed
 //   characters; the letterhead's hairline is its contact line's bottom
 //   border, without the diamond; the title has no hairline after it.
+// - A section's bracket (its `brackets`) is left out: Word has no shape that
+//   follows a group of paragraphs' height.
 
 import (
 	"context"

@@ -87,5 +87,5 @@ export function useCoverLetters(resumeId: Readonly<Ref<string | null>>, resume: 
     await refresh()
   }
 
-  return { letters, loaded, refresh, open, create, duplicate, rename, remove }
+  return { letters, loaded, open, create, duplicate, rename, remove }
 }

@@ -5,10 +5,6 @@ import type { Basics } from '../types'
 import StringList from './StringList.vue'
 
 const basics = defineModel<Basics>({ required: true })
-
-function removeContact(index: number) {
-  basics.value.contacts.splice(index, 1)
-}
 </script>
 
 <template>
@@ -30,7 +26,7 @@ function removeContact(index: number) {
           <span class="handle h-item" title="Drag to reorder" aria-hidden="true">⠿</span>
           <input v-model="contact.text" class="input" placeholder="Shown text" aria-label="Shown text" />
           <input v-model="contact.url" class="input url" placeholder="Link (optional)" aria-label="Link" />
-          <button class="icon-btn danger" type="button" title="Remove contact" @click="removeContact(i)">×</button>
+          <button class="icon-btn danger" type="button" title="Remove contact" @click="basics.contacts.splice(i, 1)">×</button>
         </div>
       </VueDraggable>
       <button class="btn btn-add add" type="button" @click="basics.contacts.push(newContact())">+ Contact</button>

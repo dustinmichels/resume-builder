@@ -17,8 +17,8 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
 ]
 
 /** "5 minutes ago", "yesterday", "just now" */
-export function formatRelative(iso: string, now = Date.now()) {
-  const seconds = (new Date(iso).getTime() - now) / 1000
+export function formatRelative(iso: string) {
+  const seconds = (new Date(iso).getTime() - Date.now()) / 1000
   for (const [unit, size] of UNITS) {
     if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit)
   }

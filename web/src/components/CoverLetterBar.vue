@@ -155,10 +155,4 @@ function promptDelete() {
   margin: 0;
   color: var(--muted);
 }
-
-.error {
-  margin: 0;
-  color: var(--error);
-  font-size: 13px;
-}
 </style>

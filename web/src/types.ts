@@ -59,6 +59,8 @@ export interface EntriesSection {
   items: EntryItem[]
   /** compactEntries templates: each entry runs together on one line, details included. */
   compact?: boolean
+  /** entryBrackets templates: one thin bracket in the gutter beside the section's entries. */
+  brackets?: boolean
   /** legend templates: labelled icons printed after the section title, explaining the entries' icons. Missing when it has no lines. */
   legend?: Legend
 }
@@ -273,9 +275,10 @@ export interface Settings {
 
 /**
  * markers: the leader, bullet and paragraphMarker styles; uppercaseTitles: EntriesSection.uppercaseTitles;
- * entryIcons: Entry.icons; legend: EntriesSection.legend; compactEntries: EntriesSection.compact.
+ * entryIcons: Entry.icons; legend: EntriesSection.legend; compactEntries: EntriesSection.compact;
+ * entryBrackets: EntriesSection.brackets.
  */
-export type TemplateFeature = 'markers' | 'uppercaseTitles' | 'entryIcons' | 'legend' | 'compactEntries'
+export type TemplateFeature = 'markers' | 'uppercaseTitles' | 'entryIcons' | 'legend' | 'compactEntries' | 'entryBrackets'
 
 /** A resume template; GET /api/templates lists them, classic first. */
 export interface TemplateInfo {

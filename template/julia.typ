@@ -16,7 +16,8 @@
 //   title in bold followed by the entry's `icons`; then each bullet as an
 //   indented paragraph. Text after " - " in a title is set in the light
 //   weight (a lab or department). A `compact` section runs each entry on one
-//   line: organization, location, title, date, then the bullets.
+//   line: organization, location, title, date, then the bullets. A
+//   `brackets` section draws one thin bracket in the gutter beside its entries.
 // - Columns sections: each column runs its lines together, each line's icon
 //   after it (a list of interests).
 //
@@ -252,9 +253,26 @@
   }
 }))
 
+// The section's content hung `left` in from its title; with `on`, a thin
+// square bracket in the gutter beside it, from just above the first line's
+// capitals to just below the last line's baseline. The bracket's stem is the
+// block's left border, drawn outside its bounds (outset) and continued on the
+// next page when the section breaks; its ticks are placed out of flow. So it
+// never moves text, and draws no text.
+#let bracket-stroke = 0.6pt + muted
+#let bracket-gap = 0.9em
+#let bracketed(left, on, body) = if not on { pad(left: left, body) } else {
+  let tick(dy) = place(dx: -bracket-gap, dy: dy, pdf.artifact(line(length: 0.3em, stroke: bracket-stroke)))
+  pad(left: left - bracket-gap, block(stroke: (left: bracket-stroke), outset: (y: 0.15em), inset: (left: bracket-gap), {
+    tick(-0.15em)
+    body
+    tick(0.15em)
+  }))
+}
+
 #let entries-section(sec, at) = {
   let compact = sec.at("compact", default: false)
-  pad(left: if compact { 2 * indent } else { indent }, for (i, item) in sec.items.enumerate().filter(((i, item)) => shown(item)) {
+  bracketed(if compact { 2 * indent } else { indent }, sec.at("brackets", default: false), for (i, item) in sec.items.enumerate().filter(((i, item)) => shown(item)) {
     let at = at + ".items." + str(i)
     if item.type == "label" {
       block(above: 1.1em, below: 0pt, strong(emph(field(at + ".text", rich(item.text)))))

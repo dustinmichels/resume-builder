@@ -14,7 +14,7 @@ import type {
   Supervisor,
 } from './types'
 
-export const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`
+const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`
 
 export const newContact = (): Contact => ({ id: newId('c'), text: '', url: '' })
 

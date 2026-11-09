@@ -37,11 +37,9 @@ export const hasFeature = (template: TemplateInfo, feature: TemplateFeature) => 
 const KEY: InjectionKey<ComputedRef<TemplateInfo>> = Symbol('template')
 
 /** Provides the open resume's template to the editors below. */
-export function provideTemplate(style: () => Style | undefined): ComputedRef<TemplateInfo> {
+export function provideTemplate(style: () => Style | undefined) {
   load()
-  const current = computed(() => templateOf(style()))
-  provide(KEY, current)
-  return current
+  provide(KEY, computed(() => templateOf(style())))
 }
 
 /** The open resume's template; classic outside provideTemplate. */

@@ -40,7 +40,7 @@ function anchorAt(node: Node | null): HTMLAnchorElement | null {
 }
 
 function ensureFocus() {
-  if (el.value && document.activeElement !== el.value) focus()
+  if (document.activeElement !== el.value) focus()
 }
 
 function format(command: 'bold' | 'italic') {

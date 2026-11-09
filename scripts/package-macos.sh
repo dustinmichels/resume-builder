@@ -2,8 +2,10 @@
 # Build build/release/Resume-Builder.dmg: a universal (arm64 + x86_64)
 # "Resume Builder.app" with the desktop server (-tags "release desktop") and
 # typst inside, signed with the Developer ID Application identity in the
-# Keychain, notarized and stapled. Called by scripts/package.sh, which has
-# built web/dist and unpacked both macOS typst releases.
+# Keychain, notarized and stapled. Also build/release/Resume-Builder.zip, the
+# same app alone, which the app downloads to update itself
+# (server/desktop_update.go). Called by scripts/package.sh, which has built
+# web/dist and unpacked both macOS typst releases.
 #
 # Usage: scripts/package-macos.sh <version> <typst arm64 dir> <typst x86_64 dir>
 #   Each typst dir holds typst, LICENSE and NOTICE.
@@ -31,6 +33,7 @@ bundle_id=com.dustinmichels.resumebuilder
 min_macos=13.0 # Go 1.27 targets macOS 13 (Ventura); typst is checked below
 out=build/release
 dmg=$out/Resume-Builder.dmg
+zip=$out/Resume-Builder.zip
 work=build/macos
 app="$work/$name.app"
 notary_profile=${NOTARY_PROFILE:-resume-builder}
@@ -42,7 +45,7 @@ identity=${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning |
 bundle_version=${version#v}
 [[ "$bundle_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || bundle_version=0.0.0
 
-rm -rf "$work" "$dmg"
+rm -rf "$work" "$dmg" "$zip"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/licenses/typst"
 
 echo "==> $name.app"
@@ -115,23 +118,32 @@ ln -s /Applications "$stage/Applications"
 hdiutil create -quiet -volname "$name" -srcfolder "$stage" -fs HFS+ -format UDZO "$dmg"
 rm -rf "$stage"
 
-if [ -z "$identity" ]; then
+if [ -n "$identity" ]; then
+  codesign --force --timestamp --sign "$identity" "$dmg"
+
+  echo "==> Notarizing (this can take a few minutes)"
+  result=$(xcrun notarytool submit "$dmg" --keychain-profile "$notary_profile" --wait --output-format json) ||
+    die "notarytool submit failed: $result"
+  id=$(plutil -extract id raw - <<<"$result")
+  status=$(plutil -extract status raw - <<<"$result")
+  if [ "$status" != Accepted ]; then
+    xcrun notarytool log "$id" --keychain-profile "$notary_profile" >&2 || true
+    die "notarization $id: $status"
+  fi
+
+  xcrun stapler staple "$dmg"
+  spctl -a -t open --context context:primary-signature -vv "$dmg"
+  spctl -a -t exec -vv "$app"
+  # Notarizing the disk image notarized the app in it too. Its ticket, stapled
+  # to the app in Resume-Builder.zip, lets a browser-downloaded copy pass
+  # Gatekeeper offline; the in-app update needs none (it isn't quarantined).
+  xcrun stapler staple "$app" ||
+    echo "package-macos: warning: couldn't staple the app; Gatekeeper checks Resume-Builder.zip's app online" >&2
+else
   echo "package-macos: warning: $dmg is not notarized; Gatekeeper blocks it on other Macs" >&2
-  exit 0
 fi
 
-codesign --force --timestamp --sign "$identity" "$dmg"
-
-echo "==> Notarizing (this can take a few minutes)"
-result=$(xcrun notarytool submit "$dmg" --keychain-profile "$notary_profile" --wait --output-format json) ||
-  die "notarytool submit failed: $result"
-id=$(plutil -extract id raw - <<<"$result")
-status=$(plutil -extract status raw - <<<"$result")
-if [ "$status" != Accepted ]; then
-  xcrun notarytool log "$id" --keychain-profile "$notary_profile" >&2 || true
-  die "notarization $id: $status"
-fi
-
-xcrun stapler staple "$dmg"
-spctl -a -t open --context context:primary-signature -vv "$dmg"
-spctl -a -t exec -vv "$app"
+# The app alone at the top level, as the updater requires, and without
+# AppleDouble files for extended attributes, which would break its seal.
+echo "==> Resume-Builder.zip"
+ditto -c -k --norsrc --noextattr --noacl --keepParent "$app" "$zip"
