@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ImagePlus } from '@lucide/vue'
-import { shallowRef, useTemplateRef, watch } from 'vue'
+import { defineAsyncComponent, shallowRef, useTemplateRef, watch } from 'vue'
 import { useTemplate } from '../composables/useTemplates'
 import { iconStyle } from '../lineIcons'
 import type { LineIcon } from '../types'
-import IconPicker from './IconPicker.vue'
+
+// Lazy: the picker pulls in the whole Lucide set (~700 kB), only needed once a picker opens.
+const IconPicker = defineAsyncComponent(() => import('./IconPicker.vue'))
 
 /** An icon in the sidebar; clicking opens the icon picker, with the template's icons, below it. */
 const { icon = null } = defineProps<{ icon?: LineIcon | null }>()

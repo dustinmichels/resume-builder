@@ -90,7 +90,8 @@ releases, and Typst's license. A release build puts its own folder first on `PAT
 
 The Mac app (`scripts/package-macos.sh`) is `Resume Builder.app` with universal (arm64 + x86_64) builds of
 `resume-builder` (`-tags "release desktop production"`) and Typst in `Contents/MacOS/`, and the icon
-(`macos/AppIcon.icns`, made from `macos/icon.svg` by `scripts/icon.sh`). Signing needs, once per Mac:
+(`macos/AppIcon.icns`, made from `macos/icon.svg` by `scripts/icon.sh`, which also writes `server/icon.png`, the Dock
+icon the app sets at run time so `mise run app` shows it too). Signing needs, once per Mac:
 
 1. A **Developer ID Application** certificate in the Keychain (developer.apple.com → Certificates, or Xcode →
    Settings → Accounts → Manage Certificates); `security find-identity -v -p codesigning` lists it. Back up its private
@@ -169,10 +170,11 @@ one after a heading or list starts flush. The bottom margin is half the resume's
 defaults to Libertinus Serif, which Typst bundles.
 
 `template/julia-letter.typ` (Julia) repeats the Julia resume's header at the resume's size: the name centered over a
-gray line of the letter's header lines and the resume's contacts. The letter's title is a section title, and the
-body is indented beneath it as a section's entries are: paragraphs separated by a gap, subheadings bold like entry
-titles, bullets as indented paragraphs without markers. The margin is the resume's all round. A new letter starts in
-the resume's font at 10.5 pt.
+gray line of the letter's header lines and the resume's contacts (a header line repeating a contact appears once),
+parted by accent dots, over a hairline with an accent diamond at its middle. The letter's title is a section title
+with a hairline running on to the margin. The body is justified on a letter's measure: paragraphs separated by a gap,
+subheadings bold like entry titles, bullets hung from small accent diamonds, and the closing signed with the name in
+the name's font. The margin is the resume's, but at least 0.8 in. A new letter starts in the resume's font at 10.5 pt.
 
 Both templates read `data.json` as `{basics, style, letter}`. The Word export of a letter follows its template too
 (see [Downloads](#downloads)).
@@ -201,7 +203,13 @@ after ` - ` in a title is set light (a lab or department). Its extra controls sh
 
 - **Icons** on each entry (sidebar entry card, or the image button on a title's page editor), drawn after the title,
   or after the organization line when the entry has no title.
-- **Legend** on an entries section: lines with icons, printed after the section title, each line in its icon's color.
+- **Legend** on an entries section: lines with icons, printed in bold after the section title, each line in its icon's
+  color by default; the swatch beside a legend line's icon on the Content tab changes it (stored as the line icon's
+  `color`, reset when you pick another icon).
+  No panel behind it by default, as in the sample; under the legend's lines, tick **Background → Show** to pick one,
+  stored as `"fill": "#rrggbb"` on the section's `legend` (remove the key for none). **Border → Show** adds a rounded
+  border, with or without the background, stored as `"border": "#rrggbb"` (Word draws it with square corners). Each
+  section's legend has its own.
 - **Compact** on an entries section: each entry runs on one line (organization, location, title, date, then the
   bullets in smaller type), as in the sample's education.
 - Columns sections run each column's lines together, each line's icon after it (the sample's interests).

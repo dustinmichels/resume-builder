@@ -6,6 +6,7 @@ import type { EntriesSection, Section } from '../types'
 import ColumnsEditor from './ColumnsEditor.vue'
 import EntriesEditor from './EntriesEditor.vue'
 import IconLinesEditor from './IconLinesEditor.vue'
+import OptionalColor from './OptionalColor.vue'
 import StringList from './StringList.vue'
 import VisibilityToggle from './VisibilityToggle.vue'
 
@@ -95,13 +96,19 @@ const count = computed(() => {
 
       <div v-if="section.kind === 'entries' && hasFeature(template, 'legend')" class="field">
         <span class="field-label">Legend</span>
-        <IconLinesEditor
-          v-if="section.legend"
-          :model-value="section.legend"
-          :path="`${path}.legend`"
-          add-label="Legend line"
-          @empty="dropLegend(section)"
-        />
+        <template v-if="section.legend">
+          <IconLinesEditor
+            :model-value="section.legend"
+            :path="`${path}.legend`"
+            add-label="Legend line"
+            label-colors
+            @empty="dropLegend(section)"
+          />
+          <div class="legend-panel">
+            <OptionalColor v-model="section.legend.fill" label="Background" initial="#eeeeee" />
+            <OptionalColor v-model="section.legend.border" label="Border" initial="#999999" />
+          </div>
+        </template>
         <button v-else class="btn btn-add add-legend" type="button" @click="addLegend(section)">+ Legend line</button>
       </div>
 
@@ -208,5 +215,11 @@ const count = computed(() => {
   justify-self: start;
   padding: 3px 9px;
   font-size: 13px;
+}
+
+.legend-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
 }
 </style>

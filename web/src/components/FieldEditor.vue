@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ImagePlus } from '@lucide/vue'
-import { computed, onMounted, useTemplateRef } from 'vue'
+import { computed, defineAsyncComponent, onMounted, useTemplateRef } from 'vue'
 import { hasFeature, useTemplate } from '../composables/useTemplates'
 import { addEntryIconPath, describe, getContact, getString, iconSlotOf, isRich, listOf, setString } from '../fieldPath'
 import { spliceIcons } from '../lineIcons'
 import type { LineIcon, PageDoc } from '../types'
-import IconPicker from './IconPicker.vue'
 import RichText from './RichText.vue'
+
+// Lazy: the picker pulls in the whole Lucide set (~700 kB), only needed once a picker opens.
+const IconPicker = defineAsyncComponent(() => import('./IconPicker.vue'))
 
 // Edits one value of the document in place. The parent keys this component by
 // the edited path, so every switch mounts fresh and focuses the new value.

@@ -1,23 +1,54 @@
 <!-- App icon master (1024×1024, macOS icon grid). Glyph: Lucide "file-user"
-     (ISC license, https://lucide.dev), as in web/public/favicon.svg.
-     scripts/icon.sh turns it into AppIcon.icns. -->
+     (ISC license, https://lucide.dev), as in web/public/favicon.svg, drawn in
+     its 24-unit coordinates. scripts/icon.sh renders it (with typst, whose SVG
+     renderer supports the filters) into AppIcon.icns and server/icon.png. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#9c2a63"/>
-      <stop offset="1" stop-color="#5f1239"/>
+    <linearGradient id="tile" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#b23a78"/>
+      <stop offset="0.55" stop-color="#861f55"/>
+      <stop offset="1" stop-color="#5a0f35"/>
     </linearGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.12"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#f6e8ef"/>
+    </linearGradient>
+    <linearGradient id="flap" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8e3ed"/>
+      <stop offset="1" stop-color="#dcb2c7"/>
+    </linearGradient>
+    <clipPath id="page-clip">
+      <path id="page" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>
+    </clipPath>
+    <filter id="tile-shadow" x="-10%" y="-10%" width="120%" height="125%">
       <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.3"/>
     </filter>
+    <filter id="page-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0.55" stdDeviation="0.6" flood-color="#2a0518" flood-opacity="0.45"/>
+    </filter>
+    <filter id="flap-shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="-0.25" dy="0.35" stdDeviation="0.35" flood-color="#5a0f35" flood-opacity="0.35"/>
+    </filter>
   </defs>
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)" filter="url(#shadow)"/>
-  <g transform="translate(512 516) scale(23) translate(-12 -12)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6">
-    <path fill="#fff" stroke="#fff" stroke-width="2.6" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>
-    <g stroke="#7a1a4a">
-      <path d="M14 2v5a1 1 0 0 0 1 1h5"/>
-      <path d="M16 22a4 4 0 0 0-8 0"/>
-      <circle cx="12" cy="15" r="3"/>
+
+  <g filter="url(#tile-shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+    <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#fff" stroke-opacity="0.14" stroke-width="4"/>
+  </g>
+
+  <g transform="translate(512 522) scale(24) translate(-12 -12)">
+    <use href="#page" fill="url(#paper)" filter="url(#page-shadow)"/>
+    <g clip-path="url(#page-clip)">
+      <path d="M14 2v5a1 1 0 0 0 1 1h5z" fill="url(#flap)" filter="url(#flap-shadow)"/>
+      <g fill="none" stroke="#7a1a4a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 22a4 4 0 0 0-8 0"/>
+        <circle cx="12" cy="15" r="3"/>
+      </g>
     </g>
   </g>
 </svg>

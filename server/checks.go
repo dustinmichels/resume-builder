@@ -39,7 +39,7 @@ type DocSection struct {
 	Variant         string        `json:"variant"`
 	Columns         []DocColumn   `json:"columns"`
 	Compact         bool          `json:"compact"` // Julia: each entry on one line
-	Legend          *DocIconLines `json:"legend"`  // Julia: labelled icons after the title
+	Legend          *DocLegend    `json:"legend"`  // Julia: labelled icons after the title
 }
 
 type DocItem struct {
@@ -61,10 +61,13 @@ type DocColumn struct {
 	Icons  []*LineIcon `json:"icons"` // Julia: the icon after each line, nil for none
 }
 
-// DocIconLines are lines with an optional icon beside each, nil for none.
-type DocIconLines struct {
-	Lines []string    `json:"lines"`
-	Icons []*LineIcon `json:"icons"`
+// DocLegend is a section's legend: lines with an optional icon beside each
+// (nil for none), on an optional panel and inside an optional border.
+type DocLegend struct {
+	Lines  []string    `json:"lines"`
+	Icons  []*LineIcon `json:"icons"`
+	Fill   string      `json:"fill"`   // the panel, "#rrggbb"; "" = none
+	Border string      `json:"border"` // the rounded border, "#rrggbb"; "" = none
 }
 
 // iconAt returns the icon at i of icons, or nil.

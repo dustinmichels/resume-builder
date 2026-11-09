@@ -60,14 +60,14 @@ export interface EntriesSection {
   /** compactEntries templates: each entry runs together on one line, details included. */
   compact?: boolean
   /** legend templates: labelled icons printed after the section title, explaining the entries' icons. Missing when it has no lines. */
-  legend?: IconLines
+  legend?: Legend
 }
 
 /** An icon drawn beside text. `svg` is its markup, so the template draws it without an icon set. */
 export interface LineIcon {
   name: string
   svg: string
-  /** From a template's icon set: the color of a legend label beside it. Lucide icons have none (drawn in the accent color). */
+  /** From a template's icon set: the color of a legend label beside it, editable per legend line. Lucide icons have none (drawn in the accent color, the label in ink). */
   color?: string
 }
 
@@ -76,6 +76,14 @@ export interface IconLines {
   lines: string[]
   /** The icon beside each line, by line index; null or missing for none. */
   icons?: (LineIcon | null)[]
+}
+
+/** A section's legend: its lines, and the panel and border around them. */
+export interface Legend extends IconLines {
+  /** The panel behind the legend, '#rrggbb'; missing for none. */
+  fill?: string
+  /** The rounded border around the legend, '#rrggbb'; missing for none. */
+  border?: string
 }
 
 export interface Column extends IconLines {

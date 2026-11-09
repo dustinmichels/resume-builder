@@ -7,6 +7,7 @@ package main
 // menus and dialogs. Everything else is the same server.
 
 import (
+	_ "embed"
 	"errors"
 	"io"
 	"log"
@@ -35,6 +36,12 @@ var (
 	logPath string
 )
 
+// appIcon is the Dock icon (and the icon in dialogs). The .app bundle has it
+// too, but setting it here also covers `mise run app`. Made by scripts/icon.sh.
+//
+//go:embed icon.png
+var appIcon []byte
+
 func init() {
 	serve = serveApp
 	fail = failApp
@@ -51,12 +58,13 @@ func serveApp(h http.Handler, _ string, _ bool) error {
 	log.Printf("resume-builder %s (app)", buildVersion)
 	newApp(h)
 	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     appName,
-		Width:     1360,
-		Height:    860,
-		MinWidth:  900,
-		MinHeight: 600,
-		URL:       "/",
+		Title:      appName,
+		Width:      1360, // size when un-maximised
+		Height:     860,
+		MinWidth:   900,
+		MinHeight:  600,
+		StartState: application.WindowStateMaximised,
+		URL:        "/",
 	})
 	return app.Run()
 }
@@ -88,6 +96,7 @@ func newApp(h http.Handler) {
 	app = application.New(application.Options{
 		Name:        appName,
 		Description: "Version " + strings.TrimPrefix(buildVersion, "v"),
+		Icon:        appIcon,
 		Logger:      slog.New(slog.NewTextHandler(log.Writer(), nil)),
 		Assets:      application.AssetOptions{Handler: h, DisableLogging: true},
 		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
@@ -95,7 +104,7 @@ func newApp(h http.Handler) {
 			UniqueID: appID,
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
 				if window != nil {
-					window.Restore()
+					window.UnMinimise() // not Restore: that un-maximises
 					window.Focus()
 				}
 			},

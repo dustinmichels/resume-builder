@@ -39,6 +39,8 @@ type docxWriter struct {
 	strongFont  string
 	strongScale float64
 	linkColor   string // links' color; "" for the accent
+	shade       string // the fill behind runs and icons, as RRGGBB; "" for none
+	border      string // the border around runs and icons, as RRGGBB; "" for none
 
 	// Icons, each drawn once as word/media/icon<i+1>.svg with a PNG copy
 	// for readers without SVG support; drawings counts the pictures placed.
@@ -317,6 +319,7 @@ func (d *docxWriter) run(text string, p runProps) string {
 	if p.size != 0 {
 		fmt.Fprintf(&b, `<w:sz w:val="%d"/>`, d.halfPoints(p.size))
 	}
+	b.WriteString(d.panel())
 	b.WriteString("</w:rPr>")
 	// Line breaks typed in the editor become Word line breaks, as in the PDF.
 	for i, line := range strings.Split(text, "\n") {
@@ -327,6 +330,19 @@ func (d *docxWriter) run(text string, p runProps) string {
 	}
 	b.WriteString("</w:r>")
 	return b.String()
+}
+
+// panel is a run's border and shading in the writer's border and shade, if
+// any (they follow sz in rPr). Adjacent runs with the same border share one box.
+func (d *docxWriter) panel() string {
+	var s string
+	if d.border != "" {
+		s = `<w:bdr w:val="single" w:sz="6" w:space="0" w:color="` + d.border + `"/>`
+	}
+	if d.shade != "" {
+		s += `<w:shd w:val="clear" w:color="auto" w:fill="` + d.shade + `"/>`
+	}
+	return s
 }
 
 func (d *docxWriter) styles() string {

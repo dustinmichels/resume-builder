@@ -13,6 +13,9 @@ package main
 //   paragraph mark), so the heading holds only the title, as in the PDF.
 // - Icons are pictures marked decorative: SVG, with a PNG copy drawn by Typst
 //   for readers without SVG support.
+// - In the letter, the dots and diamonds the template draws are typed
+//   characters; the letterhead's hairline is its contact line's bottom
+//   border, without the diamond; the title has no hairline after it.
 
 import (
 	"context"
@@ -24,11 +27,12 @@ import (
 )
 
 const (
-	juliaInk     = "231F20"
-	juliaMuted   = "828282" // luma(130)
-	juliaDisplay = "Source Sans 3"
-	juliaIndent  = 2.3  // ems the content hangs in from the section titles
-	juliaIcon    = 0.92 // icon size, in ems of the text beside it
+	juliaInk        = "231F20"
+	juliaMuted      = "828282" // luma(130)
+	juliaDisplay    = "Source Sans 3"
+	juliaIndent     = 2.3      // ems the content hangs in from the section titles
+	juliaIcon       = 0.92     // icon size, in ems of the text beside it
+	juliaRule       = "CDCDCD" // luma(205), the letter's hairlines
 )
 
 // juliaWriter writes paragraphs as Typst stacks blocks: the space between
@@ -50,6 +54,8 @@ type juliaPara struct {
 	above, below  float64
 	left, hanging float64
 	center        bool
+	justify       bool
+	rule          float64 // a hairline this many points below the paragraph; 0 for none
 }
 
 // newJuliaWriter starts a Julia document with lines leading ems apart: bold
@@ -76,12 +82,18 @@ func (j *juliaWriter) block(p juliaPara, runs string) {
 	if p.keep {
 		b.WriteString("<w:keepNext/><w:keepLines/>")
 	}
+	// pPr's children in schema order: pBdr before spacing, ind and jc.
+	if p.rule > 0 {
+		fmt.Fprintf(&b, `<w:pBdr><w:bottom w:val="single" w:sz="4" w:space="%d" w:color="%s"/></w:pBdr>`, min(int(math.Round(p.rule)), 31), juliaRule)
+	}
 	fmt.Fprintf(&b, `<w:spacing w:before="%d" w:after="0"/>`, j.before(p.above))
 	if p.left != 0 || p.hanging != 0 {
 		fmt.Fprintf(&b, `<w:ind w:left="%d" w:hanging="%d"/>`, j.em(p.left), j.em(p.hanging))
 	}
 	if p.center {
 		b.WriteString(`<w:jc w:val="center"/>`)
+	} else if p.justify {
+		b.WriteString(`<w:jc w:val="both"/>`)
 	}
 	j.para(b.String(), runs)
 	j.below = p.below
@@ -161,7 +173,7 @@ func (d *docxWriter) icon(svg string, size float64) string {
 	d.drawings++
 	pt := juliaIcon * size * d.st.FontSize
 	// The template hangs icons 0.125em below the baseline; Word sets them on it.
-	return fmt.Sprintf(iconXML, -int(math.Round(0.125*size*d.st.FontSize*2)), int(math.Round(pt*12700)), d.drawings, i+1)
+	return fmt.Sprintf(iconXML, -int(math.Round(0.125*size*d.st.FontSize*2)), int(math.Round(pt*12700)), d.drawings, i+1, d.panel())
 }
 
 // drawIcons draws each placed icon as a PNG, the copy Word shows where it
@@ -258,16 +270,20 @@ func docxJuliaResume(ctx context.Context, doc Doc) ([]byte, error) {
 }
 
 // sectionHeading writes the section title, then its legend on the same line
-// (lines in their icons' colors, each icon before it); a section without a
+// (lines in their icons' colors, each icon before it) on the legend's fill
+// and inside its border, padded half an em each side; a section without a
 // title gets a small gap instead.
 func (j *juliaWriter) sectionHeading(sec DocSection) {
 	if strings.TrimSpace(sec.Title) == "" {
 		j.space(0.6)
 		return
 	}
+	const size = 1.02
+	var fill, border string
 	var items []string
 	if lg := sec.Legend; lg != nil {
-		const size = 1.02
+		fill, border = styleHex(lg.Fill), styleHex(lg.Border)
+		j.shade, j.border = fill, border
 		for i, l := range lg.Lines {
 			if strings.TrimSpace(l) == "" {
 				continue
@@ -279,8 +295,9 @@ func (j *juliaWriter) sectionHeading(sec DocSection) {
 				}
 				item = j.icon(ic.SVG, size) + j.gap(0.1*size, size)
 			}
-			items = append(items, item+j.runs(parseRich(l), runProps{caps: true, color: color, size: size}))
+			items = append(items, item+j.runs(parseRich(l), runProps{bold: true, caps: true, color: color, size: size}))
 		}
+		j.shade, j.border = "", ""
 	}
 	if len(items) == 0 {
 		j.sectionTitle(sec.Title, 1)
@@ -291,7 +308,24 @@ func (j *juliaWriter) sectionHeading(sec DocSection) {
 	j.para(fmt.Sprintf(`<w:pStyle w:val="Heading1"/><w:spacing w:before="%d" w:after="0"/><w:rPr><w:vanish/><w:specVanish/></w:rPr>`, j.before(1.3)),
 		j.runs(plain(sec.Title), runProps{}))
 	j.below = below
-	j.block(juliaPara{keep: true, above: 1.3, below: 0.55}, j.gap(0.9, 1.02)+strings.Join(items, j.gap(0.7*1.02, 1.02)))
+	// As in the template: a 1.3em gutter, half an em of it the panel's padding.
+	gutter, pad := j.gap(0.9, size), ""
+	if fill != "" || border != "" {
+		gutter = j.gap(1.3-0.5*size, size)
+		j.shade, j.border = fill, border
+		pad = j.gap(0.5*size, size)
+	}
+	legend := pad + strings.Join(items, j.gap(0.7*size, size)) + pad
+	j.shade, j.border = "", ""
+	j.block(juliaPara{keep: true, above: 1.3, below: 0.55}, gutter+legend)
+}
+
+// styleHex is a color as RRGGBB, "" for none.
+func styleHex(c string) string {
+	if m := hexColor.FindStringSubmatch(c); m != nil {
+		return strings.ToUpper(m[1])
+	}
+	return ""
 }
 
 // entry writes an entry as one unbreakable block: the organization line
@@ -405,9 +439,12 @@ func (j *juliaWriter) column(col DocColumn) {
 
 // ── Cover letter ────────────────────────────────────────────────────────────
 
+// docxJuliaLetter mirrors template/julia-letter.typ: the letterhead and
+// title at the resume's size, the body at the letter's, justified, inside a
+// margin of at least 0.8in.
 func docxJuliaLetter(ld LetterDoc) ([]byte, error) {
 	l := ld.Letter
-	j := newJuliaWriter(*ld.Style, 0.55)
+	j := newJuliaWriter(*ld.Style, 0.62)
 	resumeFont, resumeSize := j.st.Font, j.st.FontSize
 	j.st.Font, j.st.FontSize = l.Style.Font, l.Style.FontSize
 	if j.st.Font == "" {
@@ -416,56 +453,74 @@ func docxJuliaLetter(ld LetterDoc) ([]byte, error) {
 	if j.st.FontSize <= 0 {
 		j.st.FontSize = 10.5
 	}
+	j.st.Margin = max(j.st.Margin, 0.8)
+	j.bottom = j.st.Margin
 	// The letterhead and title keep the resume's size: r is it in the letter's ems.
 	r := resumeSize / j.st.FontSize
 	name := ld.Basics.Name
 
-	line := runProps{font: resumeFont, color: juliaMuted, size: 1.05 * r}
+	// Letterhead: the header lines not repeating a contact, then the
+	// contacts, parted by accent dots, over a hairline.
+	size := 1.05 * r
+	line := runProps{font: resumeFont, color: juliaMuted, size: size}
+	contacts := map[string]bool{}
+	for _, c := range ld.Basics.Contacts {
+		contacts[c.Text] = true
+	}
 	var parts []string
 	for _, h := range nonEmpty(l.Header) {
-		parts = append(parts, j.runs(parseRich(h), line))
+		if !contacts[strings.TrimSpace(h)] {
+			parts = append(parts, j.runs(parseRich(h), line))
+		}
 	}
-	j.header(name, append(parts, j.contacts(ld.Basics.Contacts, line)...), r)
+	parts = append(parts, j.contacts(ld.Basics.Contacts, line)...)
+	if strings.TrimSpace(name) != "" {
+		j.block(juliaPara{style: "Title", below: 0.6 * r, center: true}, j.runs(plain(name), runProps{size: 2.45 * r}))
+	}
+	sep := j.gap(0.75*size, size) + j.run("•", runProps{font: resumeFont, color: j.accent, size: 0.8 * size}) + j.gap(0.75*size, size)
+	j.block(juliaPara{center: true, rule: 1.1 * resumeSize}, strings.Join(parts, sep))
+
 	if strings.TrimSpace(l.Title) != "" {
-		j.sectionTitle(l.Title, 1.55*r)
+		j.block(juliaPara{style: "Heading1", keep: true, above: 1.8 * 1.55 * r, below: 1.1 * 1.55 * r},
+			j.runs(plain(l.Title), runProps{spacing: 0.04 * 1.55 * r}))
 	} else {
-		j.space(1.3 * 1.55 * r)
+		j.space(1.8 * 1.55 * r)
 	}
 
-	// The body hangs in as a resume section's entries do.
-	indent := juliaIndent * r
 	if strings.TrimSpace(l.Greeting) != "" {
-		j.block(juliaPara{above: 0.9, below: 1.2, left: indent}, j.runs(plain(l.Greeting), runProps{}))
+		j.block(juliaPara{above: 1, below: 1.2}, j.runs(plain(l.Greeting), runProps{}))
 	}
 	for _, blk := range l.Blocks {
 		switch blk.Kind {
 		case "paragraph":
 			if strings.TrimSpace(blk.Text) != "" {
-				j.block(juliaPara{above: 0.9, below: 0.9, left: indent}, j.runs(parseRich(blk.Text), runProps{}))
+				j.block(juliaPara{above: 1, below: 1, justify: true}, j.runs(parseRich(blk.Text), runProps{}))
 			}
 		case "heading":
 			if strings.TrimSpace(blk.Text) != "" {
-				j.block(juliaPara{style: "Heading2", keep: true, above: 1.6, below: 0.7, left: indent}, j.runs(plain(blk.Text), runProps{}))
+				j.block(juliaPara{style: "Heading2", keep: true, above: 1.7, below: 0.75}, j.runs(plain(blk.Text), runProps{}))
 			}
 		case "bullets":
+			// Each item hangs from an accent diamond, tabbed to the text.
+			marker := j.run("◆", runProps{color: j.accent, size: 0.55}) + "<w:r><w:tab/></w:r>"
 			items := nonEmpty(blk.Items)
 			for i, it := range items {
 				above := 0.6
 				if i == 0 {
-					above = 0.9
+					above = 1
 				}
-				j.block(juliaPara{above: above, below: 0.6, left: indent + 1.9 + 1, hanging: 1}, j.runs(parseRich(it), runProps{}))
+				j.block(juliaPara{above: above, below: 0.6, left: 1.1 + 0.8, hanging: 0.8, justify: true}, marker+j.runs(parseRich(it), runProps{}))
 			}
 			if len(items) > 0 {
-				j.below = 0.9
+				j.below = 1
 			}
 		}
 	}
 	if strings.TrimSpace(l.Closing) != "" {
 		signed := strings.TrimSpace(name) != ""
-		j.block(juliaPara{keep: signed, above: 1.8, left: indent}, j.runs(plain(l.Closing), runProps{}))
+		j.block(juliaPara{keep: signed, above: 2}, j.runs(plain(l.Closing), runProps{}))
 		if signed {
-			j.block(juliaPara{above: 1.2, left: indent}, j.runs(plain(name), runProps{}))
+			j.block(juliaPara{above: 1.6}, j.runs(plain(name), runProps{font: juliaDisplay, bold: true, size: 1.35}))
 		}
 	}
 
@@ -497,5 +552,6 @@ const juliaStylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="%[1]s" w:hAnsi="%[1]s" w:cs="%[1]s" w:eastAsia="%[1]s"/><w:color w:val="%[3]s"/><w:sz w:val="%[2]d"/><w:szCs w:val="%[2]d"/><w:lang w:val="en-US"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="%[4]d" w:lineRule="exact"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:rFonts w:ascii="%[5]s" w:hAnsi="%[5]s" w:cs="%[5]s"/><w:b/><w:sz w:val="%[6]d"/><w:szCs w:val="%[6]d"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:line="240" w:lineRule="auto"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:rFonts w:ascii="%[5]s" w:hAnsi="%[5]s" w:cs="%[5]s"/><w:b/><w:caps/><w:color w:val="%[8]s"/><w:spacing w:val="%[7]d"/><w:sz w:val="%[9]d"/><w:szCs w:val="%[9]d"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:rFonts w:ascii="%[5]s" w:hAnsi="%[5]s" w:cs="%[5]s"/><w:b/><w:sz w:val="%[10]d"/><w:szCs w:val="%[10]d"/></w:rPr></w:style></w:styles>`
 
 // iconXML takes: the vertical offset (half-points), the size (EMUs), the
-// drawing's id, the icon's number (its media files and relationships).
-const iconXML = `<w:r><w:rPr><w:position w:val="%[1]d"/></w:rPr><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="%[2]d" cy="%[2]d"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="%[3]d" name="Icon %[3]d"><a:extLst><a:ext uri="{C183D7F6-B498-43B3-948B-1728B52AA6E4}"><adec:decorative xmlns:adec="http://schemas.microsoft.com/office/drawing/2017/decorative" val="1"/></a:ext></a:extLst></wp:docPr><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="%[3]d" name="icon%[4]d.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdP%[4]d"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rIdS%[4]d"/></a:ext></a:extLst></a:blip><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%[2]d" cy="%[2]d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`
+// drawing's id, the icon's number (its media files and relationships), the
+// run's panel (border and shading).
+const iconXML = `<w:r><w:rPr><w:position w:val="%[1]d"/>%[5]s</w:rPr><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="%[2]d" cy="%[2]d"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="%[3]d" name="Icon %[3]d"><a:extLst><a:ext uri="{C183D7F6-B498-43B3-948B-1728B52AA6E4}"><adec:decorative xmlns:adec="http://schemas.microsoft.com/office/drawing/2017/decorative" val="1"/></a:ext></a:extLst></wp:docPr><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="%[3]d" name="icon%[4]d.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdP%[4]d"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rIdS%[4]d"/></a:ext></a:extLst></a:blip><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%[2]d" cy="%[2]d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`

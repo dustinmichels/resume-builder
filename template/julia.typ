@@ -9,7 +9,9 @@
 // Layout:
 // - Header: the name centered, then headline parts and contacts on one line.
 // - Section titles in the accent color. An entries section's `legend` (lines
-//   with icons) runs after its title, each label in its icon's `color`.
+//   with icons) runs after its title, on a panel of its `fill` and inside a
+//   rounded border of its `border` when set (neither by default, as in the
+//   sample), each label in its icon's `color`.
 // - Entries: organization (`subtitle`, small caps), location, date; then the
 //   title in bold followed by the entry's `icons`; then each bullet as an
 //   indented paragraph. Text after " - " in a title is set in the light
@@ -172,10 +174,16 @@
 
 #let section-title(title, at) = text(font: display, size: 1.55 * base, weight: "bold", fill: accent, tracking: 0.02em, upper(field(at + ".title", title)))
 
-// The legend: each line in its icon's color, the icon before it.
-#let legend(sec, at) = {
-  let lg = sec.at("legend", default: none)
-  if lg == none { return none }
+// A legend's color `key` ("fill" or "border"), "#rrggbb"; missing or "" for none.
+#let legend-color(lg, key) = {
+  let c = lg.at(key, default: "")
+  if c == "" { none } else { rgb(c) }
+}
+
+// The legend: each line in bold, in its icon's color (editable per line), the
+// icon before it, on a panel drawn outside the text's bounds (outset), so it
+// never changes line spacing.
+#let legend(lg, at) = {
   let items = lg.lines.enumerate().filter(((i, l)) => l != "").map(((i, l)) => {
     let ic = icon-at(lg, i)
     let fill = if ic != none and ic.at("color", default: none) != none { rgb(ic.color) } else { ink }
@@ -184,15 +192,21 @@
       text(fill: fill, upper(field(at + ".legend.lines." + str(i), rich(l))))
     })
   })
-  if items.len() > 0 { text(size: 1.02 * base, weight: light, items.join(h(0.7em))) }
+  if items.len() > 0 {
+    let border = legend-color(lg, "border")
+    let stroke = if border == none { none } else { 0.75pt + border }
+    text(size: 1.02 * base, weight: "bold", box(fill: legend-color(lg, "fill"), stroke: stroke, outset: (x: 0.5em, y: 0.35em), radius: 0.3em, items.join(h(0.7em))))
+  }
 }
 
 #let heading-row(sec, at) = {
-  let lg = legend(sec, at)
-  block(above: 1.3em, below: 0.55em, sticky: true, if lg == none {
+  let lg = sec.at("legend", default: none)
+  let body = if lg == none { none } else { legend(lg, at) }
+  block(above: 1.3em, below: 0.55em, sticky: true, if body == none {
     heading(level: 1, section-title(sec.title, at))
   } else {
-    grid(columns: (auto, 1fr), column-gutter: 0.9em, align: bottom, heading(level: 1, section-title(sec.title, at)), lg)
+    let panel = legend-color(lg, "fill") != none or legend-color(lg, "border") != none
+    grid(columns: (auto, 1fr), column-gutter: if panel { 1.3em } else { 0.9em }, align: bottom, heading(level: 1, section-title(sec.title, at)), body)
   })
 }
 
