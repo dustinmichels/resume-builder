@@ -1,3 +1,4 @@
+import { shallowRef } from 'vue'
 import { newContactInfo, newSupervisor } from './factory'
 import type {
   Check,
@@ -53,6 +54,14 @@ export const api = {
   /** Creates the folder if needed and seeds it with a resume when it has none. */
   async setDataDir(dataDir: string): Promise<Settings> {
     return (await request('/api/settings', send('PUT', JSON.stringify({ dataDir })))).json()
+  },
+  /** Asks for a folder in a native dialog (app only); '' if cancelled. */
+  async chooseFolder(): Promise<string> {
+    return (await (await request('/api/choose-folder', { method: 'POST' })).json()).path
+  },
+  /** Opens a web, mail or phone link in its default app (app only). */
+  async openLink(url: string): Promise<void> {
+    await request('/api/open', send('POST', JSON.stringify({ url })))
   },
 
   /** Classic first. */
@@ -164,11 +173,23 @@ export const api = {
   },
 }
 
-export function download(data: Blob, filename: string) {
+/** Set from GET /api/settings when the editor runs in the desktop app's web view rather than a browser. */
+export const inApp = shallowRef(false)
+
+/**
+ * Saves data as filename: a browser download, or in the app (whose web view
+ * doesn't download) a native Save dialog. Resolves false if that was cancelled.
+ */
+export async function download(data: Blob, filename: string): Promise<boolean> {
+  if (inApp.value) {
+    const res = await request(`/api/save?name=${encodeURIComponent(filename)}`, { method: 'POST', body: data })
+    return (await res.json()).path !== ''
+  }
   const url = URL.createObjectURL(data)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+  return true
 }

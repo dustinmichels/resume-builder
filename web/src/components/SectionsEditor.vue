@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { shallowRef } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { newSection } from '../factory'
 import type { Section, SectionKind } from '../types'
+import PromptDialog, { type PromptRequest } from './PromptDialog.vue'
 import SectionCard from './SectionCard.vue'
 
 const sections = defineModel<Section[]>({ required: true })
+const prompt = shallowRef<PromptRequest | null>(null)
 
 const ADD_OPTIONS: { kind: SectionKind; label: string; hint: string }[] = [
   { kind: 'entries', label: 'Entries', hint: 'Jobs, schools, volunteer roles' },
@@ -13,8 +16,16 @@ const ADD_OPTIONS: { kind: SectionKind; label: string; hint: string }[] = [
 ]
 
 function remove(index: number) {
-  const name = sections.value[index]!.title || 'this section'
-  if (confirm(`Delete ${name} and everything in it?`)) sections.value.splice(index, 1)
+  const section = sections.value[index]!
+  prompt.value = {
+    title: `Delete ${section.title || 'this section'} and everything in it?`,
+    confirmLabel: 'Delete',
+    danger: true,
+    run: () => {
+      const i = sections.value.indexOf(section)
+      if (i >= 0) sections.value.splice(i, 1)
+    },
+  }
 }
 </script>
 
@@ -46,6 +57,7 @@ function remove(index: number) {
         </button>
       </div>
     </div>
+    <PromptDialog v-model="prompt" />
   </div>
 </template>
 

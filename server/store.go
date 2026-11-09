@@ -62,6 +62,13 @@ type config struct {
 type settings struct {
 	DataDir        string `json:"dataDir"`
 	DefaultDataDir string `json:"defaultDataDir"`
+	// Desktop is set in the desktop app, where the editor asks the server for
+	// what a web view can't do (see shell.go).
+	Desktop bool `json:"desktop"`
+}
+
+func settingsFor(dataDir string) settings {
+	return settings{DataDir: dataDir, DefaultDataDir: defaultDataDir(), Desktop: native != nil}
 }
 
 // summary describes a saved resume or cover letter: its id (the name shown
@@ -494,7 +501,7 @@ func serveJSONFile(w http.ResponseWriter, path string) {
 func (s *server) getSettings(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	writeJSON(w, settings{DataDir: s.dataDir, DefaultDataDir: defaultDataDir()})
+	writeJSON(w, settingsFor(s.dataDir))
 }
 
 func (s *server) putSettings(w http.ResponseWriter, r *http.Request) {
@@ -525,7 +532,7 @@ func (s *server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.dataDir = dir
-	writeJSON(w, settings{DataDir: dir, DefaultDataDir: defaultDataDir()})
+	writeJSON(w, settingsFor(dir))
 }
 
 func (s *server) listResumes(w http.ResponseWriter, r *http.Request) {

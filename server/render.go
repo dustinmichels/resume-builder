@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +40,7 @@ func checkTools() error {
 		return errors.New("typst not found on PATH (install with `brew install typst`)")
 	}
 	if _, err := exec.LookPath("pdftotext"); err != nil {
-		fmt.Fprintln(os.Stderr, "warning: pdftotext not found; machine view disabled (install with `brew install poppler`)")
+		log.Printf("warning: machine view disabled: %v", popplerMissing("pdftotext"))
 	}
 	return nil
 }
@@ -246,7 +247,7 @@ func attachedJSON(raw []byte) ([]byte, error) {
 // Pages are separated by form feeds.
 func extractText(ctx context.Context, pdfPath string) (raw, layout string, err error) {
 	if _, err := exec.LookPath("pdftotext"); err != nil {
-		return "", "", errors.New("pdftotext not found; install poppler (`brew install poppler`) to see the machine view")
+		return "", "", popplerMissing("pdftotext")
 	}
 	run := func(mode string) (string, error) {
 		out, err := exec.CommandContext(ctx, "pdftotext", mode, "-enc", "UTF-8", pdfPath, "-").Output()

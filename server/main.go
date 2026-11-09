@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
-	"net"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -41,50 +39,47 @@ func main() {
 	open := flag.Bool("open", bundled != nil, "open the editor in the browser once serving")
 	flag.Parse()
 
+	h, err := setup(*configPath, *templatePath, *static)
+	if err == nil {
+		err = serve(h, *addr, *open)
+	}
+	if err != nil {
+		fail(err)
+	}
+}
+
+// setup finds the tools, templates and remembered settings, and returns the
+// handler serving the API and the editor.
+func setup(configPath, templatePath, static string) (http.Handler, error) {
 	if err := preferBundledTools(); err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	if err := checkTools(); err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	if *configPath == "" {
+	if configPath == "" {
 		p, err := defaultConfigPath()
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
-		*configPath = p
+		configPath = p
 	}
-	if *templatePath == "" {
+	if templatePath == "" {
 		dir, err := templateFolder()
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
-		*templatePath = filepath.Join(dir, "resume.typ")
+		templatePath = filepath.Join(dir, "resume.typ")
 	}
 	legacy := "data/resume.json" // only in a checkout of an older version
 	if bundled != nil {
 		legacy = ""
 	}
-	s, err := newServer(*templatePath, *configPath, legacy)
+	s, err := newServer(templatePath, configPath, legacy)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-
-	ln, err := net.Listen("tcp", *addr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	url := "http://" + ln.Addr().String()
-	log.Printf("resume-builder %s on %s", buildVersion, url)
-	if *open {
-		cmd := openCommand(url)
-		if err := cmd.Start(); err != nil {
-			log.Printf("opening the browser: %v", err)
-		} else {
-			go cmd.Wait()
-		}
-	}
-	log.Fatal(http.Serve(ln, newMux(s, editor(*static))))
+	return newMux(s, editor(static)), nil
 }
 
 // newServer loads the remembered data folder from configPath.
@@ -135,6 +130,11 @@ func newMux(s *server, ui fs.FS) *http.ServeMux {
 	mux.HandleFunc("POST /api/letter/pdf", s.letterPDF)
 	mux.HandleFunc("POST /api/letter/docx", letterDocx)
 	mux.HandleFunc("POST /api/letter/md", letterMarkdown)
+	if native != nil {
+		mux.HandleFunc("POST /api/open", openURL)
+		mux.HandleFunc("POST /api/choose-folder", s.chooseFolder)
+		mux.HandleFunc("POST /api/save", saveAs)
+	}
 	if ui != nil {
 		mux.Handle("GET /", http.FileServerFS(ui))
 	}

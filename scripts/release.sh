@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Test, package, tag, and publish a GitHub release with the archives from
-# scripts/package.sh.
+# Test, package, tag, and publish a GitHub release with the archives and the
+# signed, notarized Resume-Builder.dmg from scripts/package.sh. macOS only.
 #
 # Usage: scripts/release.sh [patch|minor|major|X.Y.Z]   (default: patch)
 #   Versions come from the vX.Y.Z git tags; with none yet, a bump releases 0.1.0.
@@ -31,6 +31,19 @@ git fetch --quiet --tags origin main
   die "main and origin/main differ; push or pull first"
 gh auth status >/dev/null 2>&1 || die "gh is not logged in; run 'gh auth login'"
 
+# The Mac app is signed and notarized while packaging, before anything is
+# tagged, so a failure there publishes nothing. Check its prerequisites first.
+step "Checking signing and notarization"
+[ "$(uname -s)" = Darwin ] || die "releases include the Mac app (Resume-Builder.dmg), which only builds on macOS"
+export CODESIGN_IDENTITY=${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning |
+  sed -n 's/^ *[0-9]*) [0-9A-F]* "\(Developer ID Application: .*\)"$/\1/p' | awk 'NR == 1')}
+[[ "$CODESIGN_IDENTITY" == "Developer ID Application: "* ]] ||
+  die "no Developer ID Application identity in the Keychain (security find-identity -v -p codesigning)"
+export NOTARY_PROFILE=${NOTARY_PROFILE:-resume-builder}
+xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 ||
+  die "notary profile '$NOTARY_PROFILE' doesn't work; create it with: xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <apple id> --team-id LLM5F36KYW"
+echo "Signing as $CODESIGN_IDENTITY, notarizing with profile $NOTARY_PROFILE"
+
 latest=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | awk 'NR == 1')
 case "$bump" in
   patch | minor | major)
@@ -59,6 +72,7 @@ go test ./server/
 step "Packaging"
 scripts/package.sh "$tag"
 [ -z "$(git status --porcelain)" ] || die "packaging changed tracked files; commit them and rerun"
+[ -f build/release/Resume-Builder.dmg ] || die "packaging produced no Resume-Builder.dmg"
 
 # --- Tag and publish ---
 

@@ -4,9 +4,9 @@
 
 [tools]
 go = "1.27.3"
-air = "1.67.4"           # Go live reload (used by `api`)
+air = "1.67.4" # Go live reload (used by `api`)
 bun = "1.4.4"
-"npm:oxfmt" = "0.76.0"   # web formatter (used by `fmt`)
+"npm:oxfmt" = "0.76.0" # web formatter (used by `fmt`)
 typst = "0.15.1"
 
 # ==============================================================================
@@ -53,6 +53,12 @@ description = "Build, then serve app + API from one process (http://127.0.0.1:87
 depends = ["build"]
 run = "go run ./server"
 
+[tasks.app]
+description = "Build the editor, then run the desktop app: a native window (Wails, -tags desktop) reading template/ and web/dist/"
+depends = ["build"]
+env = { CGO_ENABLED = "1", CGO_CFLAGS = "-O2 -g -mmacosx-version-min=13.0", CGO_LDFLAGS = "-mmacosx-version-min=13.0" }
+run = "go run -tags desktop ./server"
+
 # ==============================================================================
 # Quality
 # ==============================================================================
@@ -70,9 +76,9 @@ run = ["go fmt ./...", "cd web && oxfmt"]
 # ==============================================================================
 
 [tasks.package]
-description = "Build release archives (server with templates + editor bundled, plus typst) into build/release; optional version arg"
+description = "Build release archives (server with templates + editor bundled, plus typst) and, on macOS, the signed and notarized Resume-Builder.dmg into build/release; optional version arg"
 run = "scripts/package.sh"
 
 [tasks.release]
-description = "Check the tree is clean and level with origin/main, test, package, tag, and publish a GitHub release (patch by default; or minor, major, X.Y.Z)"
+description = "Check the tree is clean and level with origin/main, check signing and notarization, test, package (archives + DMG), tag, and publish a GitHub release (patch by default; or minor, major, X.Y.Z)"
 run = "scripts/release.sh"

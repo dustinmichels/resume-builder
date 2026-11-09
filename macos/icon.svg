@@ -1,0 +1,23 @@
+<!-- App icon master (1024×1024, macOS icon grid). Glyph: Lucide "file-user"
+     (ISC license, https://lucide.dev), as in web/public/favicon.svg.
+     scripts/icon.sh turns it into AppIcon.icns. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9c2a63"/>
+      <stop offset="1" stop-color="#5f1239"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)" filter="url(#shadow)"/>
+  <g transform="translate(512 516) scale(23) translate(-12 -12)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6">
+    <path fill="#fff" stroke="#fff" stroke-width="2.6" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>
+    <g stroke="#7a1a4a">
+      <path d="M14 2v5a1 1 0 0 0 1 1h5"/>
+      <path d="M16 22a4 4 0 0 0-8 0"/>
+      <circle cx="12" cy="15" r="3"/>
+    </g>
+  </g>
+</svg>

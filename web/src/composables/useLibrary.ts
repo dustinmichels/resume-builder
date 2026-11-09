@@ -1,5 +1,6 @@
 import { shallowRef } from 'vue'
 import { api } from '../api'
+import { runInApp } from '../desktop'
 import { formatDateTime } from '../format'
 import type { DocSummary, Settings, Version } from '../types'
 import { useResumeDoc } from './useResumeDoc'
@@ -49,6 +50,7 @@ export function useLibrary() {
   async function init() {
     try {
       settings.value = await api.getSettings()
+      if (settings.value.desktop) runInApp()
     } catch (e) {
       error.value = `Could not reach the server: ${e instanceof Error ? e.message : e}`
       return

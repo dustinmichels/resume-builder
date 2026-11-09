@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { shallowRef } from 'vue'
+import { api, inApp } from '../api'
 
 const props = defineProps<{
   defaultDataDir: string
@@ -21,6 +22,15 @@ async function submit() {
     busy.value = false
   }
 }
+
+async function browse() {
+  error.value = null
+  try {
+    path.value = (await api.chooseFolder()) || path.value
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
 </script>
 
 <template>
@@ -33,7 +43,10 @@ async function submit() {
       </p>
       <label class="field">
         <span class="field-label">Data folder</span>
-        <input v-model="path" class="input" required spellcheck="false" autocomplete="off" />
+        <span class="answer">
+          <input v-model="path" class="input" required spellcheck="false" autocomplete="off" />
+          <button v-if="inApp" class="btn" type="button" :disabled="busy" @click="browse">Choose…</button>
+        </span>
       </label>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <div class="buttons">
@@ -74,6 +87,16 @@ async function submit() {
 .text {
   margin: 0;
   color: var(--muted);
+}
+
+.answer {
+  display: flex;
+  gap: 6px;
+}
+
+.answer .input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .error {

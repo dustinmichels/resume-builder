@@ -259,6 +259,8 @@ export interface FieldBox {
 export interface Settings {
   dataDir: string
   defaultDataDir: string
+  /** The editor runs in the desktop app, not a browser. */
+  desktop: boolean
 }
 
 /**

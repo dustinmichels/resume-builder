@@ -7,6 +7,10 @@ export interface PromptRequest {
   /** Initial answer; omit for a plain confirmation. */
   value?: string
   placeholder?: string
+  /** The answer may be empty. */
+  optional?: boolean
+  /** Shows a "Choose…" button that fills in the answer from what this resolves ('' to keep it). */
+  browse?: () => Promise<string>
   confirmLabel: string
   danger?: boolean
   /** Runs on confirm; the dialog stays open showing the error if it throws. */
@@ -55,22 +59,37 @@ async function submit() {
 function onCancel(event: Event) {
   if (busy.value) event.preventDefault()
 }
+
+async function browse() {
+  const current = request.value
+  if (!current?.browse) return
+  error.value = null
+  try {
+    const chosen = await current.browse()
+    if (chosen && request.value === current) value.value = chosen
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
 </script>
 
 <template>
-  <dialog ref="dialog" class="prompt" @cancel="onCancel" @close="request = null">
+  <!-- Keys stay inside: the dialog may sit in an editor that handles Escape and Tab itself (FieldEditor). -->
+  <dialog ref="dialog" class="prompt" @cancel="onCancel" @close="request = null" @keydown.stop>
     <form v-if="request" @submit.prevent="submit">
       <h2 class="title">{{ request.title }}</h2>
       <p v-if="request.message" class="message">{{ request.message }}</p>
-      <input
-        v-if="request.value !== undefined"
-        ref="input"
-        v-model="value"
-        class="input"
-        :placeholder="request.placeholder"
-        required
-        :aria-label="request.title"
-      />
+      <div v-if="request.value !== undefined" class="answer">
+        <input
+          ref="input"
+          v-model="value"
+          class="input"
+          :placeholder="request.placeholder"
+          :required="!request.optional"
+          :aria-label="request.title"
+        />
+        <button v-if="request.browse" class="btn" type="button" :disabled="busy" @click="browse">Choose…</button>
+      </div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <div class="buttons">
         <button class="btn btn-quiet" type="button" :disabled="busy" @click="request = null">Cancel</button>
@@ -113,6 +132,16 @@ form {
   color: var(--muted);
   white-space: pre-line;
   overflow-wrap: anywhere;
+}
+
+.answer {
+  display: flex;
+  gap: 6px;
+}
+
+.answer .input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .error {

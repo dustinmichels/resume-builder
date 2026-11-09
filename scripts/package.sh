@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Build release archives into build/release: for each platform, the server with
-# the templates and editor bundled (-tags release), plus the pinned typst and its
-# license. Archive names carry no version, so
+# Build release files into build/release: for each platform, an archive of the
+# server with the templates and editor bundled (-tags release), plus the pinned
+# typst and its license; on macOS also Resume-Builder.dmg, the Mac app
+# (scripts/package-macos.sh). Names carry no version, so
 # https://github.com/dustinmichels/resume-builder/releases/latest/download/<name>
 # always points at the newest release.
 #
@@ -73,8 +74,21 @@ for target in "${targets[@]}"; do
   fi
 done
 
-(cd "$out" && shasum -a 256 resume-builder-* >checksums.txt)
+if [ "$(uname -s)" = Darwin ]; then
+  scripts/package-macos.sh "$version" \
+    build/stage/typst-aarch64-apple-darwin/typst-aarch64-apple-darwin \
+    build/stage/typst-x86_64-apple-darwin/typst-x86_64-apple-darwin
+else
+  echo "==> Skipping Resume-Builder.dmg: the Mac app can only be built on macOS"
+fi
+
+(
+  cd "$out"
+  files=(resume-builder-*)
+  [ ! -f Resume-Builder.dmg ] || files+=(Resume-Builder.dmg)
+  shasum -a 256 "${files[@]}" >checksums.txt
+)
 rm -rf build/stage
 echo
-echo "Archives for $version in $out:"
+echo "Release files for $version in $out:"
 ls -lh "$out"

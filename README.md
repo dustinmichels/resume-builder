@@ -1,13 +1,13 @@
 # Resume editor
 
-A local resume editor: edit content in the browser, see the exact PDF pages as you type, and check what
+A local resume editor: edit content in the browser or the Mac app, see the exact PDF pages as you type, and check what
 machines (applicant tracking systems, parsers) will read from the PDF.
 
 - **Frontend** (`web/`): Vue 3 + Vite, run with Bun. Forms, drag-and-drop reordering, click-to-edit on the live
   preview, rich-text formatting.
-- **Backend** (`server/`): Go, standard library only. Stores resumes, their versions and cover letters, renders them
-  with Typst, extracts the PDF text layer with `pdftotext`, runs readability checks, and writes the Word and Markdown
-  exports.
+- **Backend** (`server/`): Go, standard library only (the Mac app adds [Wails](https://v3.wails.io)). Stores resumes,
+  their versions and cover letters, renders them with Typst, extracts the PDF text layer with `pdftotext`, runs
+  readability checks, and writes the Word and Markdown exports.
 - **Templates** (`template/resume.typ`, `template/julia.typ`, and their cover letter templates
   `template/cover-letter.typ`, `template/julia-letter.typ`): Typst. Re-read on every render, so template edits show up
   live. See [Templates](#templates).
@@ -16,14 +16,26 @@ machines (applicant tracking systems, parsers) will read from the PDF.
 
 ## Install
 
-Download the archive for your computer from the
-[latest release](https://github.com/dustinmichels/resume-builder/releases/latest) and run `resume-builder` inside it.
-The editor opens in your browser at http://127.0.0.1:8787; leave the terminal open while you use it, and press Ctrl-C to
-stop it. Each archive carries the editor, the templates and Typst, so nothing else is needed. Install Poppler for the
-machine view and the tag checks (`brew install poppler` on macOS, `poppler-utils` on Linux).
+### Mac
 
-The binaries are unsigned. On macOS, download with `curl` rather than a browser, which marks the file as quarantined
-and Gatekeeper then refuses to run it:
+Download [Resume-Builder.dmg](https://github.com/dustinmichels/resume-builder/releases/latest/download/Resume-Builder.dmg),
+open it, and drag **Resume Builder** to **Applications**. Then open it from Applications or Launchpad like any other
+app. It runs on macOS 13 (Ventura) or later, on Apple Silicon and Intel Macs.
+
+On first run, choose where to keep your resumes. The machine view ("What machines read") and the screen-reader and
+PDF-link checks need Poppler, which the app doesn't include yet; if you have Homebrew, `brew install poppler` turns
+them on. The app logs to `~/Library/Logs/Resume Builder/` (Help → Show Log File).
+
+### Command line
+
+Every [release](https://github.com/dustinmichels/resume-builder/releases/latest) also has an archive per platform with
+`resume-builder` to run from a terminal. The editor opens in your browser at http://127.0.0.1:8787; leave the terminal
+open while you use it, and press Ctrl-C to stop it. Each archive carries the editor, the templates and Typst, so nothing
+else is needed. Install Poppler for the machine view and the tag checks (`brew install poppler` on macOS,
+`poppler-utils` on Linux).
+
+The command-line binaries are unsigned. On macOS, download with `curl` rather than a browser, which marks the file as
+quarantined and Gatekeeper then refuses to run it:
 
 ```sh
 curl -fsSL https://github.com/dustinmichels/resume-builder/releases/latest/download/resume-builder-darwin-arm64.tar.gz | tar -xz
@@ -32,9 +44,9 @@ curl -fsSL https://github.com/dustinmichels/resume-builder/releases/latest/downl
 
 Use `darwin-amd64` on an Intel Mac. The same page has `linux-amd64`, `linux-arm64` and, as `.zip`, `windows-amd64` and
 `windows-arm64`. `-addr` changes the address, `-open=false` skips opening the browser, and `-config` picks another
-settings file. The templates are unpacked on every start into `<user cache dir>/resume-builder/template/` (on macOS
-`~/Library/Caches/resume-builder/template/`), undoing edits there; to change one, copy that folder and run with
-`-template <copy>/resume.typ`.
+settings file. The templates are unpacked on every start (by the app too) into `<user cache dir>/resume-builder/template/`
+(on macOS `~/Library/Caches/resume-builder/template/`), undoing edits there; to change one, copy that folder and run
+with `-template <copy>/resume.typ`.
 
 ## Run from source
 
@@ -44,8 +56,15 @@ Prerequisites: [mise](https://mise.jdx.dev) installs `go`, `bun`, `typst` and `a
 ```sh
 mise run dev     # API on 127.0.0.1:8787 (rebuilt by air on server/*.go changes) + editor on http://localhost:5180
 mise run serve   # build the editor, then serve everything from http://127.0.0.1:8787
+mise run app     # build the editor, then run the desktop app (a native window instead of the browser)
 mise run test    # server tests
 ```
+
+The desktop app is the same server built with `-tags desktop` (`server/desktop.go`): a [Wails v3](https://v3.wails.io)
+window shows the editor, served straight from the server's handler with no network port, and native dialogs stand in
+for what a web view can't do (downloads become a Save dialog, links open in the default browser, "Choose…" picks the
+data folder). It needs CGO and Xcode's command line tools; the command-line builds don't, and don't include Wails.
+The editor knows it's in the app from `desktop: true` on `GET /api/settings`.
 
 Without mise: install `go`, `bun` and `typst` (`brew install typst`) yourself, then run `go run ./server` in one
 terminal and `cd web && bun install && bun run dev` in another.
@@ -57,15 +76,30 @@ sample resume.
 
 ## Releasing
 
-`mise run release` cuts a release from a clean `main` that's level with `origin/main`: it runs the server tests, builds
-the archives, tags `vX.Y.Z`, pushes the tag and publishes a GitHub release with the archives and `checksums.txt`.
-Versions come from the git tags: a patch bump by default, or `mise run release minor|major|X.Y.Z`; the first release is
-`v0.1.0`. It needs the [GitHub CLI](https://cli.github.com) logged in (`gh auth login`). `mise run package [version]`
-builds the archives into `build/release/` without publishing.
+`mise run release` cuts a release from a clean `main` that's level with `origin/main`, on a Mac: it checks signing and
+notarization will work, runs the server tests, builds the archives and the Mac app, signs and notarizes the app, tags
+`vX.Y.Z`, pushes the tag and publishes a GitHub release with `Resume-Builder.dmg`, the archives and `checksums.txt`.
+Nothing is tagged until notarization has passed. Versions come from the git tags: a patch bump by default, or
+`mise run release minor|major|X.Y.Z`; the first release is `v0.1.0`. It needs the
+[GitHub CLI](https://cli.github.com) logged in (`gh auth login`). `mise run package [version]` builds everything into
+`build/release/` without publishing; elsewhere than macOS it skips the DMG.
 
 Each archive (`scripts/package.sh`) holds `resume-builder` built with `-tags release`, which embeds `template/` and
 `web/dist/` (`bundle.go`), plus the Typst binary of the version pinned in `mise.toml`, downloaded from Typst's
 releases, and Typst's license. A release build puts its own folder first on `PATH`, so that Typst is the one it runs.
+
+The Mac app (`scripts/package-macos.sh`) is `Resume Builder.app` with universal (arm64 + x86_64) builds of
+`resume-builder` (`-tags "release desktop production"`) and Typst in `Contents/MacOS/`, and the icon
+(`macos/AppIcon.icns`, made from `macos/icon.svg` by `scripts/icon.sh`). Signing needs, once per Mac:
+
+1. A **Developer ID Application** certificate in the Keychain (developer.apple.com → Certificates, or Xcode →
+   Settings → Accounts → Manage Certificates); `security find-identity -v -p codesigning` lists it. Back up its private
+   key as a `.p12`.
+2. A notarytool profile named `resume-builder`, with an app-specific password for the Apple ID:
+   `xcrun notarytool store-credentials resume-builder --apple-id <apple id> --team-id LLM5F36KYW`.
+
+`CODESIGN_IDENTITY` and `NOTARY_PROFILE` override either. Without the certificate, `mise run package` signs the app ad
+hoc and skips notarization: it runs on the Mac that built it, but Gatekeeper blocks it elsewhere.
 
 ## Your files
 
@@ -231,7 +265,8 @@ findings by reader, plus the dates:
 ## Downloads
 
 **Download PDF** is its own toolbar button; the other formats are under the **Download** menu next to it. On the
-**Cover letters** tab they export the letter, named `<name> - Cover Letter - <letter>`.
+**Cover letters** tab they export the letter, named `<name> - Cover Letter - <letter>`. In the Mac app each one asks
+where to save the file.
 
 - **PDF**: the Typst render you see in the preview.
 - **Word** (`.docx`): the same content and style in the resume's template layout (its letters' in their template's),

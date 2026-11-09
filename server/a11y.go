@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"os/exec"
@@ -32,7 +31,7 @@ var (
 func inspectPDF(ctx context.Context, pdfPath string) (pdfFacts, error) {
 	var f pdfFacts
 	if _, err := exec.LookPath("pdfinfo"); err != nil {
-		return f, errors.New("pdfinfo not found; install poppler (`brew install poppler`)")
+		return f, popplerMissing("pdfinfo")
 	}
 	tree, err := exec.CommandContext(ctx, "pdfinfo", "-struct-text", pdfPath).Output()
 	if err != nil {

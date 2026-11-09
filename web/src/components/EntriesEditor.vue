@@ -1,19 +1,26 @@
 <script setup lang="ts">
+import { shallowRef } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { cloneEntry, newEntry, newLabel } from '../factory'
 import type { Entry, EntryItem } from '../types'
 import EntryCard from './EntryCard.vue'
+import PromptDialog, { type PromptRequest } from './PromptDialog.vue'
 import RichText from './RichText.vue'
 import VisibilityToggle from './VisibilityToggle.vue'
 
 const items = defineModel<EntryItem[]>({ required: true })
 const { path } = defineProps<{ /** Field path of the items array. */ path: string }>()
+const prompt = shallowRef<PromptRequest | null>(null)
 
 function remove(index: number) {
   const item = items.value[index]!
   const name = item.type === 'entry' ? item.title : item.text
-  if (name && !confirm(`Delete “${name}”?`)) return
-  items.value.splice(index, 1)
+  const run = () => {
+    const i = items.value.indexOf(item)
+    if (i >= 0) items.value.splice(i, 1)
+  }
+  if (!name) return run()
+  prompt.value = { title: `Delete “${name}”?`, confirmLabel: 'Delete', danger: true, run }
 }
 
 function duplicate(index: number) {
@@ -50,6 +57,7 @@ function duplicate(index: number) {
       <button class="btn btn-add" type="button" @click="items.push(newEntry())">+ Entry</button>
       <button class="btn btn-add" type="button" @click="items.push(newLabel())">+ Subheading</button>
     </div>
+    <PromptDialog v-model="prompt" />
   </div>
 </template>
 

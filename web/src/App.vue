@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch, type Ref } from 'vue'
-import { api, download, type ExportFormat } from './api'
+import { api, download, inApp, type ExportFormat } from './api'
 import BasicsEditor from './components/BasicsEditor.vue'
 import ContactEditor from './components/ContactEditor.vue'
 import CoverLetterBar from './components/CoverLetterBar.vue'
@@ -68,6 +68,9 @@ const redo = () => (onLetter.value ? letterHistory : resumeHistory).redo()
 
 const exportError = shallowRef<string | null>(null)
 const exporting = shallowRef<ExportFormat | null>(null)
+/** What was just saved through the app's Save dialog, shown on its button for a moment. */
+const saved = shallowRef<ExportFormat | 'other' | null>(null)
+let savedTimer: ReturnType<typeof setTimeout> | undefined
 const actionError = shallowRef<string | null>(null)
 const prompt = shallowRef<PromptRequest | null>(null)
 const sidebar = useTemplateRef<HTMLElement>('sidebar')
@@ -122,22 +125,36 @@ onScopeDispose(() => window.removeEventListener('keydown', onUndoKey))
 
 const EXPORT_LABELS = { pdf: 'PDF', docx: 'Word', md: 'Markdown' } as const
 
+/** Downloads, or saves through the app's Save dialog; failures show in the toolbar under `label`. */
+async function saveFile(what: ExportFormat | 'other', label: string, data: () => Blob | Promise<Blob>, filename: string) {
+  exportError.value = null
+  saved.value = null
+  try {
+    if ((await download(await data(), filename)) && inApp.value) {
+      saved.value = what
+      clearTimeout(savedTimer)
+      savedTimer = setTimeout(() => (saved.value = null), 2000)
+    }
+  } catch (e) {
+    exportError.value = `${label} failed: ${e instanceof Error ? e.message : e}`
+  }
+}
+
 async function downloadExport(format: ExportFormat) {
   const shown = letterDoc.value ?? doc.value
   if (!shown) return
   exporting.value = format
-  exportError.value = null
   try {
-    download(await api.exportAs(onLetter.value ? 'letter' : 'resume', format, JSON.stringify(shown)), `${fileBase.value}.${format}`)
-  } catch (e) {
-    exportError.value = `${EXPORT_LABELS[format]} export failed: ${e instanceof Error ? e.message : e}`
+    const kind = onLetter.value ? 'letter' : 'resume'
+    await saveFile(format, `${EXPORT_LABELS[format]} export`, () => api.exportAs(kind, format, JSON.stringify(shown)), `${fileBase.value}.${format}`)
   } finally {
     exporting.value = null
   }
 }
 
 function downloadText() {
-  if (preview.value) download(new Blob([preview.value.text], { type: 'text/plain' }), `${fileBase.value}.txt`)
+  const text = preview.value?.text
+  if (text !== undefined) saveFile('other', 'Saving the text', () => new Blob([text], { type: 'text/plain' }), `${fileBase.value}.txt`)
 }
 
 function downloadJson() {
@@ -146,7 +163,7 @@ function downloadJson() {
   // Content only, as for the resume: no style.
   const { style: _, ...letterContent } = letterDoc.value?.letter ?? {}
   const content = letterDoc.value ? { name: basics.name, ...letterContent } : { basics, sections }
-  download(new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }), `${fileBase.value}.json`)
+  saveFile('other', 'Saving the JSON', () => new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }), `${fileBase.value}.json`)
 }
 
 const downloadItems = computed<DownloadItem[]>(() => [
@@ -155,6 +172,9 @@ const downloadItems = computed<DownloadItem[]>(() => [
   { label: 'Markdown (.md)', disabled: !doc.value || !!exporting.value, action: () => downloadExport('md') },
   { label: 'Word (.docx)', disabled: !doc.value || !!exporting.value, action: () => downloadExport('docx') },
 ])
+const downloadMenuLabel = computed(() =>
+  exporting.value && exporting.value !== 'pdf' ? 'Exporting…' : saved.value && saved.value !== 'pdf' ? 'Saved' : null,
+)
 
 /**
  * Shows a value opened on the page in its panel (Content, or Cover letters for
@@ -266,9 +286,10 @@ function promptDelete() {
 function promptSettings() {
   prompt.value = {
     title: 'Data folder',
-    message: `Resumes and their versions are saved in:\n${settings.value?.dataDir}\n\nTo use another folder, enter its path. It is created if needed; existing files are not moved.`,
+    message: `Resumes and their versions are saved in:\n${settings.value?.dataDir}\n\nTo use another folder, ${inApp.value ? 'choose it or ' : ''}enter its path. It is created if needed; existing files are not moved.`,
     value: settings.value?.dataDir ?? '',
     placeholder: settings.value?.defaultDataDir,
+    browse: inApp.value ? api.chooseFolder : undefined,
     confirmLabel: 'Switch folder',
     run: library.setDataDir,
   }
@@ -346,9 +367,9 @@ function promptSettings() {
         {{ actionError ?? exportError ?? saveError }}
       </span>
       <div class="actions">
-        <DownloadMenu :items="downloadItems" :busy-label="exporting && exporting !== 'pdf' ? 'Exporting…' : null" />
+        <DownloadMenu :items="downloadItems" :busy-label="downloadMenuLabel" />
         <button class="btn btn-primary" type="button" :disabled="!doc || !!exporting" @click="downloadExport('pdf')">
-          {{ exporting === 'pdf' ? 'Exporting…' : 'Download PDF' }}
+          {{ exporting === 'pdf' ? 'Exporting…' : saved === 'pdf' ? 'Saved' : 'Download PDF' }}
         </button>
       </div>
       <button class="icon-btn" type="button" title="Data folder settings" aria-label="Settings" @click="promptSettings">

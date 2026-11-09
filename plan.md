@@ -20,14 +20,14 @@ Approach: a Wails v3 shell (stable since v3.0.0, 2026-10-26) around the existing
 
 ## Decisions to make first
 
-| Decision | Recommendation |
-|---|---|
-| App name and bundle ID | "Resume Builder", `com.dustinmichels.resumebuilder` |
-| Architectures | One universal DMG (arm64 + x86_64 via `lipo`): users don't know their chip |
-| Minimum macOS | 13 (Ventura); check what Wails v3 and the Typst release require and take the higher |
-| Poppler | Ship v1 without it (UI explains the missing tab and checks), bundle it in phase 7 |
-| Project license | Pick one before the public DMG (none today); required anyway if Poppler (GPL) is bundled |
-| CLI archives | Keep all six; they cost nothing and serve technical users |
+| Decision               | Recommendation                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| App name and bundle ID | "Resume Builder", `com.dustinmichels.resumebuilder`                                      |
+| Architectures          | One universal DMG (arm64 + x86_64 via `lipo`): users don't know their chip               |
+| Minimum macOS          | 13 (Ventura); check what Wails v3 and the Typst release require and take the higher      |
+| Poppler                | Ship v1 without it (UI explains the missing tab and checks), bundle it in phase 7        |
+| Project license        | Pick one before the public DMG (none today); required anyway if Poppler (GPL) is bundled |
+| CLI archives           | Keep all six; they cost nothing and serve technical users                                |
 
 ## Phase 1: Prerequisites (manual, once)
 
@@ -130,33 +130,6 @@ In `scripts/package-macos.sh`, after the `.app` is laid out:
 4. README: "Install" leads with the DMG (download, drag to Applications, open); the CLI archives and `curl` move under
    a "Command line" subsection. Document the `desktop` build tag and `mise run app` under development.
 
-## Phase 7: Bundle Poppler
-
-Only the two tools the server runs: `pdftotext` (`render.go`) and `pdfinfo` (`a11y.go`).
-
-1. Spike: build Poppler from source for each architecture with CMake and as few optional dependencies as
-   possible (no Qt, GLib, Cairo, NSS, curl), then `lipo` the results. Homebrew bottles are single-architecture and
-   pull in many dylibs, so they don't make a universal app.
-2. Put the binaries in `Contents/MacOS/` and their dylibs in `Contents/Frameworks/`, rewrite load paths to
-   `@executable_path/../Frameworks` (`install_name_tool`, or `dylibbundler`), and sign every dylib and binary before
-   the app in phase 5.
-3. GPL compliance: ship Poppler's `COPYING` in `Contents/Resources/licenses/poppler/` and state where its source is
-   (the exact release tarball). Running them as separate programs keeps the app's own license independent.
-4. Until this lands, the app replaces the "install poppler" errors with a plain explanation that this feature isn't
-   available yet: telling a non-technical user to run `brew` doesn't help them.
-
-If the spike shows building Poppler for both architectures is a sink, the alternative is replacing both tools with Go:
-text extraction is available in Go libraries, but reading the tag tree (`pdfinfo -struct-text`) would be custom code.
-
-## Phase 8: Later
-
-- **Windows:** Wails app (WebView2 ships with Windows 11), installer, and code signing (Azure Artifact Signing or an
-  OV certificate) so SmartScreen doesn't warn. Needs a Windows build runner (GitHub Actions), since the desktop build
-  uses CGO.
-- **Linux:** keep the tarball; consider an AppImage only if someone asks.
-- **Updates:** at minimum, the app checks the GitHub latest release on launch and offers a download link; a real
-  auto-updater (Sparkle) is a separate project.
-
 ## Done when (macOS)
 
 On a fresh macOS user account, on both an Apple Silicon and an Intel Mac:
@@ -169,6 +142,5 @@ On a fresh macOS user account, on both an Apple Silicon and an Intel Mac:
 - [ ] Links in the preview and checks open in the default browser.
 - [ ] Cmd-C/V/X/A/Z work in text fields; Cmd-Q quits and nothing keeps running (`pgrep resume-builder`, `pgrep typst`).
 - [ ] Launching again while open focuses the existing window.
-- [ ] After phase 7: the "What machines read" tab and all checks work without Homebrew.
 - [ ] `mise run release` refuses to tag when signing or notarization would fail, and otherwise publishes the DMG next
       to the six archives.

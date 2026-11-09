@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, useTemplateRef, watch } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, shallowRef, useTemplateRef, watch } from 'vue'
 import { escapeHtml, htmlToRich, richToHtml } from '../rich'
+import PromptDialog, { type PromptRequest } from './PromptDialog.vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -9,6 +10,7 @@ const { placeholder = '', toolbar = false } = defineProps<{ placeholder?: string
 const emit = defineEmits<{ enter: []; 'backspace-empty': [] }>()
 
 const el = useTemplateRef<HTMLDivElement>('el')
+const prompt = shallowRef<PromptRequest | null>(null)
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 
@@ -55,16 +57,26 @@ function editLink() {
   const anchor = anchorAt(sel.anchorNode)
   if (anchor && sel.isCollapsed) sel.selectAllChildren(anchor)
   const range = sel.getRangeAt(0).cloneRange()
-  const url = window.prompt('Link URL (leave empty to remove the link)', anchor?.getAttribute('href') ?? '')
-  node.focus({ preventScroll: true })
-  sel.removeAllRanges()
-  sel.addRange(range)
-  if (url === null) return
-  const target = url.trim()
-  if (!target) document.execCommand('unlink')
-  else if (range.collapsed) document.execCommand('insertHTML', false, `<a href="${escapeHtml(target)}">${escapeHtml(target)}</a>`)
-  else document.execCommand('createLink', false, target)
-  sync()
+  prompt.value = {
+    title: anchor ? 'Edit link' : 'Add link',
+    message: anchor ? 'Leave the address empty to remove the link.' : undefined,
+    value: anchor?.getAttribute('href') ?? '',
+    placeholder: 'https://…',
+    optional: true,
+    confirmLabel: anchor ? 'Save' : 'Add link',
+    // Applied once the dialog has closed (a macrotask after Vue's updates): the
+    // page behind a modal dialog is inert, so it can't take focus or edits.
+    run: (url) =>
+      setTimeout(() => {
+        node.focus({ preventScroll: true })
+        sel.removeAllRanges()
+        sel.addRange(range)
+        if (!url) document.execCommand('unlink')
+        else if (range.collapsed) document.execCommand('insertHTML', false, `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`)
+        else document.execCommand('createLink', false, url)
+        sync()
+      }),
+  }
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -150,6 +162,7 @@ defineExpose({ focus })
       @keydown="onKeydown"
       @paste="onPaste"
     />
+    <PromptDialog v-model="prompt" />
   </div>
 </template>
 
